@@ -118,3 +118,4 @@ salon-alhewwari/
 | خطأ Supabase RLS | تأكد من تشغيل ملف SQL كاملاً |
 | تسجيل الدخول لا يعمل | تحقق من `SUPABASE_URL` و `ANON_KEY` |
 | لا يظهر كأدمن | شغّل SQL لجعل حسابك أدمن |
+
