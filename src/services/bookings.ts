@@ -39,7 +39,48 @@ export const getAvailableSlots = async (date: string): Promise<string[]> => {
 
   const bookedTimes = existingBookings?.map((b) => b.time.slice(0, 5)) || []
 
-  return allSlots.filter((slot) => !bookedTimes.includes(slot))
+  // manual slots added by admin (extra available times)
+  const { data: manual } = await supabase
+    .from('available_slots')
+    .select('time')
+    .eq('date', date)
+
+  const manualTimes = manual?.map((m: any) => m.time.slice(0, 5)) || []
+
+  const union = Array.from(new Set([...allSlots, ...manualTimes]))
+
+  return union.filter((slot) => !bookedTimes.includes(slot)).sort()
+}
+
+// ==============================
+// إدارة الأوقات (أدمن)
+// ==============================
+
+export const addAvailableSlot = async (date: string, time: string, createdBy?: string) => {
+  const { data, error } = await supabase
+    .from('available_slots')
+    .insert({ date, time, created_by: createdBy || null })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const removeAvailableSlot = async (date: string, time: string) => {
+  const { error } = await supabase
+    .from('available_slots')
+    .delete()
+    .eq('date', date)
+    .eq('time', time)
+
+  if (error) throw error
+}
+
+export const getManualSlots = async (date: string) => {
+  const { data, error } = await supabase.from('available_slots').select('*').eq('date', date).order('time', { ascending: true })
+  if (error) throw error
+  return data || []
 }
 
 // ==============================

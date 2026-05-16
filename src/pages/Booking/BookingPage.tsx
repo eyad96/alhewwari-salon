@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/hooks/useAuth'
-import { createBooking } from '@/services/bookings'
+import { createBooking, getAvailableSlots, generateTimeSlots } from '@/services/bookings'
 import { SERVICES, URGENT_FEE } from '@/types'
 import toast from 'react-hot-toast'
 import { Link, useNavigate } from 'react-router-dom'
@@ -21,20 +21,10 @@ const bookingSchema = z.object({
 
 type BookingFormData = z.infer<typeof bookingSchema>
 
-// توليد أوقات العمل
-const generateSlots = (): string[] => {
-  const slots: string[] = []
-  for (let h = 12; h < 26; h++) {
-    const realH = h % 24
-    slots.push(`${String(realH).padStart(2, '0')}:00`)
-    if (h < 25) slots.push(`${String(realH).padStart(2, '0')}:30`)
-  }
-  return slots
-}
+// Slots are fetched from the service (includes admin-added slots and excludes booked times)
+import { useEffect } from 'react'
 
-const ALL_SLOTS = generateSlots()
-// وهمياً بعض الأوقات محجوزة للعرض
-const BOOKED_SLOTS = ['13:00', '14:30', '16:00', '19:00']
+const ALL_SLOTS: string[] = []
 
 const BookingPage: React.FC = () => {
   const { user } = useAuth()
@@ -66,10 +56,24 @@ const BookingPage: React.FC = () => {
     : 0
   const totalPrice = basePrice + (isUrgent && urgentApplies ? URGENT_FEE : 0)
 
-  const availableSlots = ALL_SLOTS.filter(slot => {
-    if (!BOOKED_SLOTS.includes(slot)) return true
-    return false
-  })
+  const [availableSlots, setAvailableSlots] = useState<string[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      setSlotsLoading(true)
+      try {
+        const s = await getAvailableSlots(format(selectedDate, 'yyyy-MM-dd'))
+        setAvailableSlots(s)
+        if (!s.includes(watch('time'))) setValue('time', '')
+      } catch (err) {
+        setAvailableSlots([])
+      } finally {
+        setSlotsLoading(false)
+      }
+    }
+    load()
+  }, [selectedDate])
 
   const onSubmit = async (data: BookingFormData) => {
     if (!user) {
@@ -236,17 +240,17 @@ const BookingPage: React.FC = () => {
                   اختر الوقت
                 </h3>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {ALL_SLOTS.map(slot => {
-                    const isBooked = BOOKED_SLOTS.includes(slot)
+                  {generateTimeSlots().map(slot => {
+                    const isAvailable = availableSlots.includes(slot)
                     const isSelected = selectedTime === slot
                     return (
                       <button
                         key={slot}
                         type="button"
-                        disabled={isBooked}
-                        onClick={() => !isBooked && setValue('time', slot)}
+                        disabled={!isAvailable || slotsLoading}
+                        onClick={() => isAvailable && setValue('time', slot)}
                         className={`py-2 px-2 rounded-lg text-sm font-medium transition-all ${
-                          isBooked
+                          !isAvailable
                             ? 'bg-gray-800 text-gray-600 cursor-not-allowed line-through'
                             : isSelected
                             ? 'gold-gradient text-black font-bold'

@@ -40,6 +40,13 @@ export interface Product {
   created_at: string
 }
 
+export interface SignUpForm {
+  full_name: string
+  email: string
+  phone?: string
+  password: string
+}
+
 export interface StudioPhoto {
   id: string
   image_url: string
