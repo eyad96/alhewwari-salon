@@ -1,13 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+// Normalize URL: strip trailing /rest/v1/ or /rest/v1 if mistakenly added
+const rawUrl = import.meta.env.VITE_SUPABASE_URL || ''
+const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/$/, '')
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || supabaseUrl.includes('your-project')) {
+if (!supabaseUrl || supabaseUrl.includes('your-project') || supabaseUrl.includes('placeholder')) {
   console.warn('⚠️ Supabase URL غير محدد في .env')
 }
 
-if (!supabaseKey || supabaseKey.includes('your-supabase')) {
+if (!supabaseKey || supabaseKey.includes('your-supabase') || supabaseKey.includes('placeholder')) {
   console.warn('⚠️ Supabase Anon Key غير محدد في .env')
 }
 
