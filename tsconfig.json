@@ -16,7 +16,6 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["vite/client"],
-    "ignoreDeprecations": "6.0",
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
