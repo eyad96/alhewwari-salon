@@ -3,6 +3,17 @@
 -- نسخ وتشغيل في: Supabase Dashboard → SQL Editor → New Query
 -- ==============================
 
+-- دالة أمنية لتحديد دور المسؤول (Admin) لتفادي التكرار اللانهائي في RLS
+create or replace function public.is_admin()
+returns boolean language plpgsql security definer as $$
+begin
+  return exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'admin'
+  );
+end;
+$$;
+
 -- 1. جدول الملفات الشخصية
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
@@ -26,9 +37,7 @@ create policy "Users can insert own profile" on public.profiles
   for insert with check (auth.uid() = id);
 
 create policy "Admin can manage all profiles" on public.profiles
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 2. جدول الحجوزات
 create table if not exists public.bookings (
@@ -59,9 +68,7 @@ create policy "Users can update own bookings" on public.bookings
   for update using (auth.uid() = user_id);
 
 create policy "Admin can manage all bookings" on public.bookings
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 3. جدول نقاط الولاء
 create table if not exists public.loyalty_points (
@@ -84,9 +91,7 @@ create policy "Users can insert own loyalty" on public.loyalty_points
   for insert with check (auth.uid() = user_id);
 
 create policy "Admin can manage all loyalty" on public.loyalty_points
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 4. جدول معاملات نقاط الولاء
 create table if not exists public.loyalty_transactions (
@@ -107,9 +112,7 @@ create policy "Users can insert own transactions" on public.loyalty_transactions
   for insert with check (auth.uid() = user_id);
 
 create policy "Admin can view all transactions" on public.loyalty_transactions
-  for select using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for select using (public.is_admin());
 
 -- 5. جدول التقييمات
 create table if not exists public.reviews (
@@ -135,9 +138,7 @@ create policy "Users can delete own review" on public.reviews
   for delete using (auth.uid() = user_id);
 
 create policy "Admin can manage reviews" on public.reviews
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 6. جدول المنتجات
 create table if not exists public.products (
@@ -158,9 +159,7 @@ create policy "Anyone can view products" on public.products
   for select using (true);
 
 create policy "Admin can manage products" on public.products
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 7. جدول مقالات المدونة
 create table if not exists public.blog_posts (
@@ -181,9 +180,7 @@ create policy "Anyone can view blog posts" on public.blog_posts
   for select using (true);
 
 create policy "Admin can manage blog posts" on public.blog_posts
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 8. جدول صور الاستوديو
 create table if not exists public.studio_photos (
@@ -201,9 +198,7 @@ create policy "Anyone can view studio photos" on public.studio_photos
   for select using (true);
 
 create policy "Admin can manage studio photos" on public.studio_photos
-  for all using (
-    exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
-  );
+  for all using (public.is_admin());
 
 -- 9. جدول إعجابات الاستوديو
 create table if not exists public.studio_likes (

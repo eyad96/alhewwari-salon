@@ -92,7 +92,13 @@ export const getCurrentUser = async (): Promise<User | null> => {
     .eq('id', user.id)
     .single()
 
-  return profile as User | null
+  if (profile) {
+    return {
+      ...profile,
+      phone: profile.phone_number || profile.phone
+    } as User
+  }
+  return null
 }
 
 // الاستماع لتغييرات المصادقة
@@ -104,7 +110,14 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
         .select('*')
         .eq('id', session.user.id)
         .single()
-      callback(profile as User | null)
+      if (profile) {
+        callback({
+          ...profile,
+          phone: profile.phone_number || profile.phone
+        } as User)
+      } else {
+        callback(null)
+      }
     } else {
       callback(null)
     }

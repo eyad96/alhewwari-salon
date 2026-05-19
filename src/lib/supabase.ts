@@ -13,22 +13,39 @@ if (!supabaseKey || supabaseKey.includes('your-supabase') || supabaseKey.include
   console.warn('⚠️ Supabase Anon Key غير محدد في .env')
 }
 
+// Create a single supabase client for interacting with your database
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseKey || 'placeholder',
   {
     auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+      persistSession: false, // Clerk handles auth
     },
     global: {
       headers: {
         'x-application-name': 'salon-alhewwari',
       },
     },
-  },
+  }
 )
+
+/**
+ * وظيفة للحصول على نسخة من Supabase مع توكن Clerk
+ * تستخدم للعمليات التي تتطلب RLS (مثل الإضافة أو التعديل)
+ */
+export const createClerkSupabaseClient = (clerkToken: string) => {
+  return createClient(
+    supabaseUrl,
+    supabaseKey,
+    {
+      global: {
+        headers: {
+          Authorization: `Bearer ${clerkToken}`,
+        },
+      },
+    }
+  )
+}
 
 // تصدير معلومات الاتصال للتشخيص
 export const supabaseInfo = {

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabase as defaultSupabase } from '@/lib/supabase'
 import { uploadToCloudinary } from '@/lib/cloudinary'
 import type { Product } from '@/types'
 
@@ -6,10 +6,10 @@ import type { Product } from '@/types'
 // استعلام المنتجات
 // ==============================
 
-export const getProducts = async (category?: string): Promise<Product[]> => {
+export const getProducts = async (category?: string, supabase = defaultSupabase): Promise<Product[]> => {
   let query = supabase
     .from('products')
-    .select('*')
+    .select('*, likes:product_likes(user_id)')
     .order('created_at', { ascending: false })
 
   if (category && category !== 'all') {
@@ -18,10 +18,14 @@ export const getProducts = async (category?: string): Promise<Product[]> => {
 
   const { data, error } = await query
   if (error) throw error
-  return data as Product[]
+  return (data || []).map((p: any) => ({
+    ...p,
+    likes_count: p.likes?.length || 0,
+    likes: p.likes?.map((l: any) => l.user_id) || []
+  })) as Product[]
 }
 
-export const getProductById = async (id: string): Promise<Product> => {
+export const getProductById = async (id: string, supabase = defaultSupabase): Promise<Product> => {
   const { data, error } = await supabase
     .from('products')
     .select('*')
@@ -46,7 +50,7 @@ export interface CreateProductData {
   image_url?: string
 }
 
-export const createProduct = async (data: CreateProductData): Promise<Product> => {
+export const createProduct = async (data: CreateProductData, supabase = defaultSupabase): Promise<Product> => {
   let image_url = data.image_url || ''
 
   // رفع الصورة إلى Cloudinary إذا كانت موجودة
@@ -75,6 +79,7 @@ export const createProduct = async (data: CreateProductData): Promise<Product> =
 export const updateProduct = async (
   id: string,
   updates: Partial<CreateProductData>,
+  supabase = defaultSupabase,
 ): Promise<Product> => {
   let image_url = updates.image_url
 
@@ -98,12 +103,39 @@ export const updateProduct = async (
   return data as Product
 }
 
-export const deleteProduct = async (id: string): Promise<void> => {
+export const deleteProduct = async (id: string, supabase = defaultSupabase): Promise<void> => {
   const { error } = await supabase.from('products').delete().eq('id', id)
   if (error) throw error
 }
 
-export const updateProductStock = async (id: string, stock: number): Promise<void> => {
+export const updateProductStock = async (id: string, stock: number, supabase = defaultSupabase): Promise<void> => {
   const { error } = await supabase.from('products').update({ stock }).eq('id', id)
   if (error) throw error
+}
+
+// ==============================
+// تفضيل المنتجات (الإعجابات)
+// ==============================
+
+export const toggleProductLike = async (
+  userId: string,
+  productId: string,
+  isLiked: boolean,
+  supabase = defaultSupabase,
+): Promise<void> => {
+  if (isLiked) {
+    const { error } = await supabase
+      .from('product_likes')
+      .delete()
+      .eq('user_id', userId)
+      .eq('product_id', productId)
+
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('product_likes')
+      .insert({ user_id: userId, product_id: productId })
+
+    if (error && error.code !== '23505') throw error
+  }
 }

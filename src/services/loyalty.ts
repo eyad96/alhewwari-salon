@@ -1,63 +1,56 @@
-import { supabase } from '@/lib/supabase'
-import type { LoyaltyPoints } from '@/types'
+import { supabase as defaultSupabase } from '@/lib/supabase'
 
-// ==============================
-// استعلام النقاط
-// ==============================
+export interface LoyaltyPoint {
+  user_id: string
+  points: number
+  total_earned: number
+  updated_at: string
+}
 
-export const getUserLoyaltyPoints = async (userId: string): Promise<LoyaltyPoints | null> => {
+export interface LoyaltyTransaction {
+  id: string
+  user_id: string
+  points: number
+  type: 'earned' | 'redeemed'
+  description: string
+  created_at: string
+}
+
+export const getUserLoyalty = async (userId: string, supabase = defaultSupabase): Promise<LoyaltyPoint | null> => {
   const { data, error } = await supabase
     .from('loyalty_points')
     .select('*')
     .eq('user_id', userId)
     .single()
-
+  
   if (error && error.code !== 'PGRST116') throw error
-  return data as LoyaltyPoints | null
+  return data as LoyaltyPoint | null
 }
 
-export const getLoyaltyTransactions = async (userId: string) => {
+export const getUserTransactions = async (userId: string, supabase = defaultSupabase): Promise<LoyaltyTransaction[]> => {
   const { data, error } = await supabase
     .from('loyalty_transactions')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(20)
-
+  
   if (error) throw error
-  return data
+  return data as LoyaltyTransaction[]
 }
 
-export const getAllUsersLoyalty = async () => {
-  const { data, error } = await supabase
-    .from('loyalty_points')
-    .select('*, user:profiles(full_name, email)')
-    .order('total_earned', { ascending: false })
-
-  if (error) throw error
-  return data
-}
-
-// ==============================
-// استبدال النقاط
-// ==============================
-
-export const redeemPoints = async (
-  userId: string,
-  pointsToRedeem: number,
-  description: string = 'حلاقة مجانية',
-): Promise<void> => {
+export const redeemPoints = async (userId: string, pointsToRedeem: number, supabase = defaultSupabase): Promise<void> => {
+  // 1. Get current points
   const { data: existing } = await supabase
     .from('loyalty_points')
     .select('points')
     .eq('user_id', userId)
     .single()
-
+  
   if (!existing || existing.points < pointsToRedeem) {
     throw new Error('نقاط غير كافية')
   }
 
-  // خصم النقاط
+  // 2. Update points in legacy table
   const { error: updateError } = await supabase
     .from('loyalty_points')
     .update({
@@ -65,38 +58,41 @@ export const redeemPoints = async (
       updated_at: new Date().toISOString(),
     })
     .eq('user_id', userId)
-
+  
   if (updateError) throw updateError
 
-  // تسجيل المعاملة
-  await supabase.from('loyalty_transactions').insert({
-    user_id: userId,
-    points: -pointsToRedeem,
-    type: 'redeemed',
-    description,
-  })
+  // 3. Sync profiles table & 4. Log transaction in parallel
+  await Promise.all([
+    supabase
+      .from('profiles')
+      .update({
+        loyalty_points: existing.points - pointsToRedeem
+      })
+      .eq('id', userId),
+    supabase.from('loyalty_transactions').insert({
+      user_id: userId,
+      points: pointsToRedeem,
+      type: 'redeemed',
+      description: 'استبدال نقاط بحلاقة مجانية',
+    })
+  ])
 }
 
-// ==============================
-// إدارة النقاط (أدمن)
-// ==============================
-
-export const adminAddPoints = async (
-  userId: string,
-  points: number,
-  description: string = 'هدية من الأدمن',
-): Promise<void> => {
+export const adminAddPoints = async (userId: string, points: number, description: string, supabase = defaultSupabase): Promise<void> => {
+  // 1. Get current points
   const { data: existing } = await supabase
     .from('loyalty_points')
     .select('points, total_earned')
     .eq('user_id', userId)
     .single()
+  
+  const newPoints = (existing?.points ?? 0) + points
 
   if (existing) {
     await supabase
       .from('loyalty_points')
       .update({
-        points: existing.points + points,
+        points: newPoints,
         total_earned: existing.total_earned + points,
         updated_at: new Date().toISOString(),
       })
@@ -104,15 +100,24 @@ export const adminAddPoints = async (
   } else {
     await supabase.from('loyalty_points').insert({
       user_id: userId,
-      points,
+      points: points,
       total_earned: points,
     })
   }
 
-  await supabase.from('loyalty_transactions').insert({
-    user_id: userId,
-    points,
-    type: 'earned',
-    description,
-  })
+  // Sync profiles table & 2. Log transaction in parallel
+  await Promise.all([
+    supabase
+      .from('profiles')
+      .update({
+        loyalty_points: newPoints
+      })
+      .eq('id', userId),
+    supabase.from('loyalty_transactions').insert({
+      user_id: userId,
+      points: points,
+      type: 'earned',
+      description: description || 'إضافة يدوية من المسؤول',
+    })
+  ])
 }

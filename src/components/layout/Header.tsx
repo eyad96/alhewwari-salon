@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Menu, X, User, LogOut, ShoppingCart, ChevronDown, LayoutDashboard, Scissors } from 'lucide-react'
+import { Menu, X, User, LogOut, ChevronDown, LayoutDashboard, Scissors } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { useCart } from '@/hooks/useCart'
-import { signOut } from '@/services/auth'
+import { useClerk, SignedIn, SignedOut, UserButton, useUser } from '@clerk/clerk-react'
 import toast from 'react-hot-toast'
 
 const navLinks = [
@@ -22,10 +21,19 @@ const Header: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const { user, isAdmin } = useAuth()
-  const { itemCount } = useCart()
+  
+  const { user: profileUser } = useAuth()
+  const { isSignedIn, user } = useUser()
+  const isAdmin = !!(isSignedIn && user?.publicMetadata?.role === 'admin')
+  
   const location = useLocation()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (user) {
+      console.log('👤 [Clerk Public Metadata]:', user.publicMetadata)
+    }
+  }, [user])
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50)
@@ -38,9 +46,11 @@ const Header: React.FC = () => {
     setUserMenuOpen(false)
   }, [location])
 
+  const { signOut: clerkSignOut } = useClerk()
+
   const handleSignOut = async () => {
     try {
-      await signOut()
+      await clerkSignOut()
       toast.success('تم تسجيل الخروج بنجاح')
       navigate('/')
     } catch {
@@ -91,73 +101,37 @@ const Header: React.FC = () => {
 
           {/* أزرار اليسار */}
           <div className="flex items-center gap-3">
-            {/* سلة التسوق */}
-            <Link
-              to="/products"
-              className="relative p-2 rounded-lg text-gray-300 hover:text-yellow-400 hover:bg-white/5 transition-all"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              {itemCount > 0 && (
-                <span className="absolute -top-1 -left-1 w-5 h-5 bg-yellow-400 text-black text-xs font-bold rounded-full flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </Link>
 
-            {user ? (
-              <div className="relative">
-                <button
-                  onClick={() => setUserMenuOpen(!userMenuOpen)}
-                  className="flex items-center gap-2 px-2 py-2 rounded-full border border-yellow-400/20 hover:border-yellow-400/40 transition-all"
-                >
-                  {user.avatar_url ? (
-                    <img
-                      src={user.avatar_url}
-                      alt={user.full_name || 'Avatar'}
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-yellow-400/10 flex items-center justify-center text-yellow-400 text-base font-bold">
-                      <User className="w-5 h-5" />
-                    </div>
-                  )}
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                </button>
-
-                <AnimatePresence>
-                  {userMenuOpen && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute left-0 mt-2 w-48 glass-dark rounded-xl shadow-xl overflow-hidden z-50"
+            <SignedIn>
+              <div className="flex items-center gap-4">
+                {isAdmin ? (
+                  <Link
+                    to="/admin"
+                    className="btn-outline-gold text-xs py-2 px-3 sm:px-4 sm:text-sm flex items-center gap-2"
+                  >
+                    <LayoutDashboard className="w-4 h-4" />
+                    لوحة التحكم
+                  </Link>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    {profileUser && (
+                      <span className="hidden sm:inline-block text-xs bg-yellow-400/10 text-yellow-400 px-3 py-1.5 rounded-full border border-yellow-400/20 font-bold font-mono">
+                        ⭐ نقاطك: {profileUser.loyalty_points ?? 0}
+                      </span>
+                    )}
+                    <Link
+                      to="/user-dashboard"
+                      className="btn-gold text-xs py-2 px-3 sm:px-4 sm:text-sm flex items-center gap-2"
                     >
-                      <div className="p-3 border-b border-white/10">
-                        <p className="text-sm font-semibold text-white truncate">{user.full_name}</p>
-                        <p className="text-xs text-gray-400 truncate">{user.email}</p>
-                        {isAdmin && <span className="badge-gold text-xs mt-1 inline-block">أدمن</span>}
-                      </div>
-                      <div className="py-1">
-                        <Link
-                          to="/dashboard"
-                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-300 hover:text-yellow-400 hover:bg-white/5 transition-colors"
-                        >
-                          <LayoutDashboard className="w-4 h-4" />
-                          لوحة التحكم
-                        </Link>
-                        <button
-                          onClick={handleSignOut}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          تسجيل الخروج
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                      <LayoutDashboard className="w-4 h-4" />
+                      حجوزاتي
+                    </Link>
+                  </div>
+                )}
+                <UserButton afterSignOutUrl="/" />
               </div>
-            ) : (
+            </SignedIn>
+            <SignedOut>
               <div className="flex items-center gap-2">
                 <Link to="/login" className="btn-outline-gold text-sm py-2 px-4 hidden sm:block">
                   دخول
@@ -166,7 +140,7 @@ const Header: React.FC = () => {
                   تسجيل
                 </Link>
               </div>
-            )}
+            </SignedOut>
 
             {/* زر القائمة - موبايل */}
             <button
@@ -202,12 +176,44 @@ const Header: React.FC = () => {
                   {link.label}
                 </Link>
               ))}
-              {!user && (
+              <SignedOut>
                 <div className="pt-2 border-t border-white/10 flex gap-2">
                   <Link to="/login" className="btn-outline-gold text-sm py-2 flex-1 text-center">دخول</Link>
                   <Link to="/signup" className="btn-gold text-sm py-2 flex-1 text-center">تسجيل</Link>
                 </div>
-              )}
+              </SignedOut>
+              <SignedIn>
+                <div className="pt-4 border-t border-white/10 flex flex-col gap-3 px-2">
+                  {isAdmin ? (
+                    <div className="flex items-center justify-between w-full">
+                      <Link 
+                        to="/admin" 
+                        className="btn-outline-gold text-xs py-2 px-4 flex items-center gap-2"
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        لوحة التحكم
+                      </Link>
+                      <UserButton afterSignOutUrl="/" />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 w-full">
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-xs bg-yellow-400/10 text-yellow-400 px-3 py-1.5 rounded-full border border-yellow-400/20 font-bold font-mono">
+                          ⭐ نقاطك: {profileUser?.loyalty_points ?? 0}
+                        </span>
+                        <UserButton afterSignOutUrl="/" />
+                      </div>
+                      <Link 
+                        to="/user-dashboard" 
+                        className="btn-gold text-xs py-2 px-4 flex items-center justify-center gap-2 w-full text-center"
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        حجوزاتي
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </SignedIn>
             </nav>
           </motion.div>
         )}

@@ -2,11 +2,12 @@ import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import Calendar from 'react-calendar'
 import { format, addDays, isBefore, startOfDay } from 'date-fns'
-import { Clock, Home, Scissors, Zap, AlertCircle, CheckCircle, ChevronRight } from 'lucide-react'
+import { Clock, Home, Scissors, Zap, AlertCircle, CheckCircle, ChevronRight, User, Phone } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/hooks/useAuth'
+import { useUser, useAuth as useClerkAuth } from '@clerk/clerk-react'
 import { createBooking, getAvailableSlots, generateTimeSlots } from '@/services/bookings'
 import { SERVICES, URGENT_FEE } from '@/types'
 import toast from 'react-hot-toast'
@@ -27,13 +28,19 @@ import { useEffect } from 'react'
 const ALL_SLOTS: string[] = []
 
 const BookingPage: React.FC = () => {
-  const { user } = useAuth()
+  const { isLoaded: clerkLoaded, isSignedIn, user: clerkUser } = useUser()
+  const { getToken } = useClerkAuth()
+  const { user: profileUser, loading: authLoading, getAuthenticatedClient, refetch: refetchAuth } = useAuth()
   const navigate = useNavigate()
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [isUrgent, setIsUrgent] = useState(false)
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [bookingSuccess, setBookingSuccess] = useState(false)
+
+  // Phone validation & Onboarding states for Booking Page
+  const [newPhone, setNewPhone] = useState('')
+  const [savingPhone, setSavingPhone] = useState(false)
 
   const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<BookingFormData>({
     resolver: zodResolver(bookingSchema),
@@ -75,17 +82,109 @@ const BookingPage: React.FC = () => {
     load()
   }, [selectedDate])
 
+  useEffect(() => {
+    const pending = localStorage.getItem('pending_booking')
+    if (pending) {
+      try {
+        const parsed = JSON.parse(pending)
+        if (parsed.service_name) setValue('service_name', parsed.service_name)
+        if (parsed.booking_type) setValue('booking_type', parsed.booking_type)
+        if (parsed.time) setValue('time', parsed.time)
+        if (parsed.notes) setValue('notes', parsed.notes)
+        if (parsed.date) setSelectedDate(new Date(parsed.date))
+        if (parsed.isUrgent) setIsUrgent(parsed.isUrgent)
+
+        localStorage.removeItem('pending_booking')
+        toast.success('تم استعادة بيانات الحجز الخاصة بك!')
+      } catch (err) {
+        console.error('Failed to restore pending booking', err)
+      }
+    }
+  }, [setValue])
+
   const onSubmit = async (data: BookingFormData) => {
-    if (!user) {
-      toast.error('يجب تسجيل الدخول أولاً')
-      navigate('/login')
+    if (!isSignedIn || !clerkUser) {
+      const pendingData = {
+        service_name: data.service_name,
+        booking_type: data.booking_type,
+        time: data.time,
+        notes: data.notes || '',
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        isUrgent: isUrgent && urgentApplies,
+      }
+      localStorage.setItem('pending_booking', JSON.stringify(pendingData))
+      toast.success('تم حفظ اختياراتك. يرجى تسجيل الدخول لإتمام الحجز!')
+      navigate('/login?redirect=/booking')
       return
     }
 
     setIsSubmitting(true)
+    console.log("🔍 Starting booking submission process...")
+    console.log("ℹ️ Clerk User Details:", { id: clerkUser.id, email: clerkUser.primaryEmailAddress?.emailAddress })
+
     try {
-      await createBooking({
-        userId: user.id,
+      // 1. Check Clerk JWT Token
+      let token: string | null = null
+      try {
+        token = await getToken({ template: 'supabase' })
+        console.log("🔑 Clerk Supabase JWT Token successfully fetched:", token ? "Exists (Valid)" : "Null/Undefined!")
+      } catch (tokenErr: any) {
+        console.error("❌ Failed to fetch Clerk JWT Token:", tokenErr)
+      }
+
+      const authSupabase = await getAuthenticatedClient()
+
+      // 2. Profile Sync & Fetch existing phone to avoid overwriting database-saved numbers
+      let existingPhone = profileUser?.phone
+      if (!existingPhone || existingPhone === 'بدون هاتف') {
+        try {
+          const { data: dbProfile } = await authSupabase
+            .from('profiles')
+            .select('phone')
+            .eq('id', clerkUser.id)
+            .maybeSingle()
+          if (dbProfile?.phone) {
+            existingPhone = dbProfile.phone
+          }
+        } catch (dbErr) {
+          console.warn("⚠️ Failed to pre-fetch profile phone:", dbErr)
+        }
+      }
+
+      const fullName = clerkUser.fullName || clerkUser.firstName || 'عميل الصالون'
+      const finalPhone = existingPhone && existingPhone !== 'بدون هاتف'
+        ? existingPhone
+        : (clerkUser.primaryPhoneNumber?.phoneNumber || '')
+      const avatarUrl = clerkUser.imageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&q=80'
+
+      const profilePayload = {
+        id: clerkUser.id,
+        full_name: fullName,
+        phone: finalPhone || 'بدون هاتف',
+        avatar_url: avatarUrl,
+        email: clerkUser.primaryEmailAddress?.emailAddress || '',
+      }
+
+      console.log("📤 Profiles Upsert Payload:", profilePayload)
+      const { data: profileRes, error: profileError } = await authSupabase
+        .from('profiles')
+        .upsert(profilePayload, { onConflict: 'id' })
+        .select()
+
+      if (profileError) {
+        console.error("❌ Profiles Upsert Error Details:", {
+          message: profileError.message,
+          details: profileError.details,
+          hint: profileError.hint,
+          code: profileError.code
+        })
+      } else {
+        console.log("✅ Profiles Sync Success:", profileRes)
+      }
+
+      // 3. Booking Creation
+      const bookingPayload = {
+        user_id: clerkUser.id,
         service_name: data.service_name,
         service_price: totalPrice,
         booking_type: data.booking_type,
@@ -93,14 +192,120 @@ const BookingPage: React.FC = () => {
         time: data.time,
         is_urgent: isUrgent && urgentApplies,
         notes: data.notes,
-      })
+      }
+
+      console.log("📤 Booking Insert Payload:", bookingPayload)
+
+      const createdBooking = await createBooking(bookingPayload, authSupabase)
+      console.log("✅ Success! Booking created successfully in Supabase:", createdBooking)
+
       setBookingSuccess(true)
       toast.success('🎉 تم الحجز بنجاح! سيتم التواصل معك قريباً')
     } catch (err: any) {
-      toast.error(err.message || 'حدث خطأ. يرجى المحاولة مرة أخرى')
+      console.error("❌ Catch Block - Booking Flow Failure:", {
+        message: err.message,
+        details: err.details,
+        hint: err.hint,
+        code: err.code,
+        stack: err.stack
+      })
+      toast.error(err.message || 'حدث خطأ أثناء إرسال الحجز. يرجى مراجعة لوحة تحكم المطورين')
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const userHasPhone = !isSignedIn || !!(
+    clerkUser?.primaryPhoneNumber?.phoneNumber ||
+    (profileUser?.phone && profileUser.phone !== 'بدون هاتف' && profileUser.phone.trim() !== '')
+  )
+
+  const handleSavePhone = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!clerkUser) return
+    const cleanPhone = newPhone.trim()
+    const jorPhoneRegex = /^07[789]\d{7}$/
+    
+    if (!cleanPhone) {
+      toast.error('الرجاء إدخال رقم الهاتف')
+      return
+    }
+    
+    if (!jorPhoneRegex.test(cleanPhone)) {
+      toast.error('الرجاء إدخال رقم هاتف أردني صحيح (مثال: 0791234567)')
+      return
+    }
+    
+    setSavingPhone(true)
+    try {
+      const authSupabase = await getAuthenticatedClient()
+      
+      const { error } = await authSupabase
+        .from('profiles')
+        .update({ phone: cleanPhone })
+        .eq('id', clerkUser.id)
+        
+      if (error) throw error
+      
+      toast.success('✅ تم حفظ رقم الهاتف بنجاح!')
+      await refetchAuth()
+    } catch (err: any) {
+      console.error('Failed to save phone in booking:', err)
+      toast.error('حدث خطأ أثناء حفظ رقم الهاتف')
+    } finally {
+      setSavingPhone(false)
+    }
+  }
+
+  if (isSignedIn && !authLoading && !userHasPhone) {
+    return (
+      <div className="min-h-screen py-12 px-4 flex items-center justify-center">
+        <div className="max-w-md w-full">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="card p-8 text-center border border-yellow-400/20"
+          >
+            <div className="w-16 h-16 rounded-full bg-yellow-400/10 flex items-center justify-center mx-auto mb-6 border border-yellow-400/30">
+              <Phone className="w-8 h-8 text-yellow-400" />
+            </div>
+            
+            <h2 className="text-2xl font-black text-white mb-3">رقم الهاتف مطلوب 💈</h2>
+            <p className="text-gray-400 text-sm mb-6 leading-relaxed">
+              لتتمكن من إتمام الحجز، يرجى إدخال رقم هاتفك المحمول للتواصل وتأكيد الحجز معك.
+            </p>
+
+            <form onSubmit={handleSavePhone} className="space-y-4">
+              <div>
+                <label className="text-gray-400 text-xs mb-1.5 block text-right">رقم الهاتف الأردني (مثال: 07XXXXXXXX)</label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={newPhone}
+                  onChange={e => setNewPhone(e.target.value.replace(/\D/g, ''))}
+                  placeholder="07XXXXXXXX"
+                  className="input-field text-center font-bold tracking-widest text-lg"
+                  dir="ltr"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingPhone}
+                className="btn-gold w-full py-3.5 flex items-center justify-center gap-2 font-bold"
+              >
+                {savingPhone ? (
+                  <div className="loader w-5 h-5 border-2 border-black/30 border-t-black" />
+                ) : (
+                  'حفظ وتفعيل الحجز'
+                )}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      </div>
+    )
   }
 
   if (bookingSuccess) {
@@ -122,8 +327,10 @@ const BookingPage: React.FC = () => {
                 <span className="text-white font-bold">{selectedService}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">التاريخ:</span>
-                <span className="text-white">{format(selectedDate, 'yyyy/MM/dd')}</span>
+                <span className="text-gray-400">التاريخ الميلادي:</span>
+                <span className="text-white font-bold">
+                  {new Intl.DateTimeFormat('ar-JO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(selectedDate)}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">الوقت:</span>
@@ -155,7 +362,7 @@ const BookingPage: React.FC = () => {
   return (
     <div className="min-h-screen py-12 px-4">
       <div className="max-w-5xl mx-auto">
-        
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -167,7 +374,7 @@ const BookingPage: React.FC = () => {
             احجز <span className="gold-text">موعدك</span>
           </h1>
           <div className="gold-divider mx-auto mb-4"></div>
-          
+
           {/* تنبيه قواعد الحجز */}
           <div className="inline-flex items-start gap-3 glass rounded-xl px-5 py-3 text-sm text-right max-w-md mx-auto">
             <AlertCircle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
@@ -178,7 +385,7 @@ const BookingPage: React.FC = () => {
           </div>
         </motion.div>
 
-        {!user && (
+        {!isSignedIn && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -194,10 +401,10 @@ const BookingPage: React.FC = () => {
 
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="grid lg:grid-cols-3 gap-8">
-            
+
             {/* العمود الأيمن - التقويم والوقت */}
             <div className="lg:col-span-2 space-y-8">
-              
+
               {/* اختيار التاريخ */}
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
@@ -216,9 +423,16 @@ const BookingPage: React.FC = () => {
                   maxDate={addDays(today, 30)}
                   locale="ar-SA"
                 />
-                <div className="mt-4 text-right text-sm text-gray-300">
-                  <span className="font-semibold text-white">التاريخ الميلادي:</span>{' '}
-                  {format(selectedDate, 'yyyy-MM-dd')}
+                <div className="mt-4 text-right text-sm text-gray-300 flex flex-col gap-1 border-t border-white/5 pt-3">
+                  <div>
+                    <span className="font-semibold text-white">التاريخ الميلادي المحدد:</span>{' '}
+                    <span className="text-yellow-400 font-bold">
+                      {new Intl.DateTimeFormat('ar-JO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(selectedDate)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    موافق لـ: {format(selectedDate, 'yyyy-MM-dd')}
+                  </div>
                 </div>
                 {isToday && (
                   <div className="mt-3 flex items-center gap-2 text-sm text-yellow-400">
@@ -249,13 +463,12 @@ const BookingPage: React.FC = () => {
                         type="button"
                         disabled={!isAvailable || slotsLoading}
                         onClick={() => isAvailable && setValue('time', slot)}
-                        className={`py-2 px-2 rounded-lg text-sm font-medium transition-all ${
-                          !isAvailable
+                        className={`py-2 px-2 rounded-lg text-sm font-medium transition-all ${!isAvailable
                             ? 'bg-gray-800 text-gray-600 cursor-not-allowed line-through'
                             : isSelected
-                            ? 'gold-gradient text-black font-bold'
-                            : 'glass text-gray-300 hover:text-yellow-400 hover:border-yellow-400/40'
-                        }`}
+                              ? 'gold-gradient text-black font-bold'
+                              : 'glass text-gray-300 hover:text-yellow-400 hover:border-yellow-400/40'
+                          }`}
                       >
                         {slot}
                       </button>
@@ -286,11 +499,10 @@ const BookingPage: React.FC = () => {
                         key={service.id}
                         type="button"
                         onClick={() => setValue('service_name', service.name)}
-                        className={`p-4 rounded-xl text-right transition-all border ${
-                          isSelected
+                        className={`p-4 rounded-xl text-right transition-all border ${isSelected
                             ? 'border-yellow-400/60 bg-yellow-400/10'
                             : 'border-white/10 hover:border-white/20 bg-white/5'
-                        }`}
+                          }`}
                       >
                         <div className="flex justify-between items-start">
                           <span className={`text-xl font-black ${isSelected ? 'text-yellow-400' : 'text-gray-300'}`}>
@@ -312,7 +524,7 @@ const BookingPage: React.FC = () => {
 
             {/* العمود الأيسر - الخيارات والملخص */}
             <div className="space-y-6">
-              
+
               {/* نوع الحجز */}
               <motion.div
                 initial={{ opacity: 0, x: 30 }}
@@ -325,11 +537,10 @@ const BookingPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setValue('booking_type', 'salon')}
-                    className={`p-4 rounded-xl text-center transition-all ${
-                      bookingType === 'salon'
+                    className={`p-4 rounded-xl text-center transition-all ${bookingType === 'salon'
                         ? 'gold-gradient text-black'
                         : 'glass text-gray-300 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <Scissors className="w-6 h-6 mx-auto mb-2" />
                     <div className="font-bold text-sm">في الصالون</div>
@@ -338,11 +549,10 @@ const BookingPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setValue('booking_type', 'home')}
-                    className={`p-4 rounded-xl text-center transition-all ${
-                      bookingType === 'home'
+                    className={`p-4 rounded-xl text-center transition-all ${bookingType === 'home'
                         ? 'gold-gradient text-black'
                         : 'glass text-gray-300 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <Home className="w-6 h-6 mx-auto mb-2" />
                     <div className="font-bold text-sm">حجز منزلي</div>
@@ -369,13 +579,11 @@ const BookingPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setIsUrgent(!isUrgent)}
-                      className={`relative w-12 h-6 rounded-full transition-colors ${
-                        isUrgent ? 'bg-yellow-400' : 'bg-gray-700'
-                      }`}
+                      className={`relative w-12 h-6 rounded-full transition-colors ${isUrgent ? 'bg-yellow-400' : 'bg-gray-700'
+                        }`}
                     >
-                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${
-                        isUrgent ? 'right-1' : 'left-1'
-                      }`} />
+                      <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${isUrgent ? 'right-1' : 'left-1'
+                        }`} />
                     </button>
                   </div>
                 </motion.div>
@@ -397,6 +605,27 @@ const BookingPage: React.FC = () => {
                 />
               </motion.div>
 
+              {/* تفاصيل العميل */}
+              {isSignedIn && clerkUser && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="card p-5 border border-yellow-400/20"
+                >
+                  <h3 className="text-white font-bold mb-3 text-sm flex items-center gap-2">
+                    <User className="w-4 h-4 text-yellow-400" />
+                    تفاصيل العميل (تلقائي)
+                  </h3>
+                  <div className="space-y-2 text-xs text-gray-400 text-right">
+                    <p><span className="text-gray-500">الاسم الكامل:</span> <span className="text-white font-bold">{clerkUser.fullName || clerkUser.firstName || 'مستخدم'}</span></p>
+                    <p><span className="text-gray-500">البريد الإلكتروني:</span> <span className="text-white">{clerkUser.primaryEmailAddress?.emailAddress}</span></p>
+                    {(clerkUser.primaryPhoneNumber?.phoneNumber || profileUser?.phone) && (
+                      <p><span className="text-gray-500">رقم الهاتف:</span> <span className="text-white">{clerkUser.primaryPhoneNumber?.phoneNumber || profileUser?.phone}</span></p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
               {/* ملخص الحجز */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -407,20 +636,22 @@ const BookingPage: React.FC = () => {
                 <h3 className="text-white font-bold mb-4">ملخص الحجز</h3>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">التاريخ</span>
-                    <span className="text-white">{format(selectedDate, 'yyyy/MM/dd')}</span>
+                    <span className="text-gray-400">التاريخ الميلادي</span>
+                    <span className="text-white font-bold">
+                      {new Intl.DateTimeFormat('ar-JO', { year: 'numeric', month: 'long', day: 'numeric' }).format(selectedDate)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">الوقت</span>
-                    <span className="text-white">{selectedTime || '-'}</span>
+                    <span className="text-white font-bold">{selectedTime || '-'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">الخدمة</span>
-                    <span className="text-white">{selectedService || '-'}</span>
+                    <span className="text-white font-bold">{selectedService || '-'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">النوع</span>
-                    <span className="text-white">{bookingType === 'salon' ? 'في الصالون' : 'منزلي'}</span>
+                    <span className="text-white font-bold">{bookingType === 'salon' ? 'في الصالون' : 'منزلي'}</span>
                   </div>
                   {isUrgent && urgentApplies && (
                     <div className="flex justify-between">
@@ -436,19 +667,21 @@ const BookingPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting || !user}
-                  className="btn-gold w-full mt-5 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="btn-gold w-full mt-5 py-3 disabled:opacity-50 flex items-center justify-center gap-2 font-bold text-sm"
                 >
                   {isSubmitting ? (
                     <div className="loader w-5 h-5 border-2 border-black/30 border-t-black" />
+                  ) : isSignedIn ? (
+                    <>تأكيد الحجز وبثق الموعد <ChevronRight className="w-4 h-4 animate-pulse" /></>
                   ) : (
-                    <>تأكيد الحجز <ChevronRight className="w-4 h-4" /></>
+                    <>تسجيل الدخول لتأكيد الحجز <ChevronRight className="w-4 h-4" /></>
                   )}
                 </button>
 
-                {!user && (
+                {!isSignedIn && (
                   <p className="text-center text-gray-500 text-xs mt-3">
-                    <Link to="/login" className="text-yellow-400 hover:underline">سجّل دخولك</Link> للحجز
+                    يرجى <Link to="/login" className="text-yellow-400 hover:underline font-bold">تسجيل الدخول</Link> لإتمام الحجز وبثق الموعد.
                   </p>
                 )}
               </motion.div>

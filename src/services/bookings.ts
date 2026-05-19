@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabase as defaultSupabase } from '@/lib/supabase'
 import type { Booking } from '@/types'
 import { addMinutes, format, parse, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns'
 
@@ -28,35 +28,51 @@ export const generateTimeSlots = (): string[] => {
   return slots
 }
 
-export const getAvailableSlots = async (date: string): Promise<string[]> => {
+export const getAvailableSlots = async (date: string, supabase = defaultSupabase): Promise<string[]> => {
   const allSlots = generateTimeSlots()
 
-  const { data: existingBookings } = await supabase
-    .from('bookings')
-    .select('time, status')
-    .eq('date', date)
-    .in('status', ['pending', 'confirmed'])
+  let bookedTimes: string[] = []
+  let manualTimes: string[] = []
 
-  const bookedTimes = existingBookings?.map((b) => b.time.slice(0, 5)) || []
+  try {
+    const [bookingsRes, manualRes] = await Promise.all([
+      supabase
+        .from('bookings')
+        .select('time, status')
+        .eq('date', date)
+        .in('status', ['pending', 'confirmed']),
+      supabase
+        .from('available_slots')
+        .select('time')
+        .eq('date', date)
+    ])
 
-  // manual slots added by admin (extra available times)
-  const { data: manual } = await supabase
-    .from('available_slots')
-    .select('time')
-    .eq('date', date)
+    if (!bookingsRes.error && bookingsRes.data) {
+      bookedTimes = bookingsRes.data.map((b) => b.time.slice(0, 5))
+    } else if (bookingsRes.error) {
+      console.warn("⚠️ bookings table query error:", bookingsRes.error.message)
+    }
 
-  const manualTimes = manual?.map((m: any) => m.time.slice(0, 5)) || []
+    if (!manualRes.error && manualRes.data) {
+      manualTimes = manualRes.data.map((m: any) => m.time.slice(0, 5))
+    } else if (manualRes.error) {
+      console.warn("⚠️ available_slots table query error:", manualRes.error.message)
+    }
+  } catch (err: any) {
+    console.warn("⚠️ Could not query bookings or available_slots table:", err.message)
+  }
 
   const union = Array.from(new Set([...allSlots, ...manualTimes]))
 
   return union.filter((slot) => !bookedTimes.includes(slot)).sort()
 }
 
+
 // ==============================
 // إدارة الأوقات (أدمن)
 // ==============================
 
-export const addAvailableSlot = async (date: string, time: string, createdBy?: string) => {
+export const addAvailableSlot = async (date: string, time: string, createdBy?: string, supabase = defaultSupabase) => {
   const { data, error } = await supabase
     .from('available_slots')
     .insert({ date, time, created_by: createdBy || null })
@@ -67,7 +83,7 @@ export const addAvailableSlot = async (date: string, time: string, createdBy?: s
   return data
 }
 
-export const removeAvailableSlot = async (date: string, time: string) => {
+export const removeAvailableSlot = async (date: string, time: string, supabase = defaultSupabase) => {
   const { error } = await supabase
     .from('available_slots')
     .delete()
@@ -77,7 +93,7 @@ export const removeAvailableSlot = async (date: string, time: string) => {
   if (error) throw error
 }
 
-export const getManualSlots = async (date: string) => {
+export const getManualSlots = async (date: string, supabase = defaultSupabase) => {
   const { data, error } = await supabase.from('available_slots').select('*').eq('date', date).order('time', { ascending: true })
   if (error) throw error
   return data || []
@@ -87,7 +103,7 @@ export const getManualSlots = async (date: string) => {
 // استعلام الحجوزات
 // ==============================
 
-export const getUserBookings = async (userId: string): Promise<Booking[]> => {
+export const getUserBookings = async (userId: string, supabase = defaultSupabase): Promise<Booking[]> => {
   const { data, error } = await supabase
     .from('bookings')
     .select('*')
@@ -98,14 +114,28 @@ export const getUserBookings = async (userId: string): Promise<Booking[]> => {
   return data as Booking[]
 }
 
-export const getAllBookings = async (): Promise<Booking[]> => {
+export const getAllBookings = async (supabase = defaultSupabase): Promise<Booking[]> => {
   const { data, error } = await supabase
     .from('bookings')
     .select('*, user:profiles(full_name, phone, email)')
     .order('date', { ascending: false })
 
   if (error) throw error
-  return data as Booking[]
+
+  const mapped = (data || []).map((b: any) => {
+    if (b.user) {
+      return {
+        ...b,
+        user: {
+          ...b.user,
+          phone: b.user.phone
+        }
+      }
+    }
+    return b
+  })
+
+  return mapped as Booking[]
 }
 
 // ==============================
@@ -113,7 +143,8 @@ export const getAllBookings = async (): Promise<Booking[]> => {
 // ==============================
 
 export interface CreateBookingData {
-  userId: string
+  userId?: string
+  user_id?: string
   service_name: string
   service_price: number
   booking_type: 'salon' | 'home'
@@ -123,34 +154,68 @@ export interface CreateBookingData {
   notes?: string
 }
 
-export const createBooking = async (data: CreateBookingData): Promise<Booking> => {
+export const createBooking = async (data: CreateBookingData, supabase = defaultSupabase): Promise<Booking> => {
   const urgent_fee = data.is_urgent ? 5 : 0
   const total_price = data.service_price + urgent_fee
 
-  const { data: booking, error } = await supabase
-    .from('bookings')
-    .insert({
-      user_id: data.userId,
-      service_name: data.service_name,
-      service_price: data.service_price,
-      booking_type: data.booking_type,
-      date: data.date,
-      time: data.time,
-      is_urgent: data.is_urgent,
-      status: 'pending',
-      total_price,
-      notes: data.notes || '',
-      modified_count: 0,
+  const targetUserId = data.user_id || data.userId
+  if (!targetUserId) {
+    throw new Error("Missing user identification (user_id / userId) inside payload creation!")
+  }
+
+  const insertPayload = {
+    user_id: targetUserId,
+    service_name: data.service_name,
+    service_price: data.service_price,
+    booking_type: data.booking_type,
+    date: data.date,
+    time: data.time,
+    is_urgent: data.is_urgent,
+    status: 'pending',
+    total_price,
+    notes: data.notes || '',
+    modified_count: 0,
+  }
+
+  console.log("📤 [Supabase Insert] Payload being sent to public.bookings:", insertPayload)
+
+  try {
+    const { data: booking, error } = await supabase
+      .from('bookings')
+      .insert(insertPayload)
+      .select()
+      .single()
+
+    if (error) {
+      console.error("❌ [Supabase Insert Error] Details:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      })
+      throw error
+    }
+
+    console.log("✅ [Supabase Insert Success] Created booking row:", booking)
+
+    // إضافة نقاط ولاء
+    try {
+      await addLoyaltyPoints(targetUserId, data.service_name, supabase)
+      console.log("✅ [Loyalty Points] Added successfully for user:", targetUserId)
+    } catch (loyaltyErr) {
+      console.error("⚠️ [Loyalty Points Error] Failed to update loyalty points:", loyaltyErr)
+    }
+
+    return booking as Booking
+  } catch (err: any) {
+    console.error("❌ [createBooking Failure] Caught exception during execution:", {
+      message: err.message,
+      details: err.details,
+      hint: err.hint,
+      code: err.code
     })
-    .select()
-    .single()
-
-  if (error) throw error
-
-  // إضافة نقاط ولاء
-  await addLoyaltyPoints(data.userId, data.service_name)
-
-  return booking as Booking
+    throw err
+  }
 }
 
 // ==============================
@@ -160,6 +225,7 @@ export const createBooking = async (data: CreateBookingData): Promise<Booking> =
 export const updateBookingStatus = async (
   bookingId: string,
   status: Booking['status'],
+  supabase = defaultSupabase,
 ): Promise<Booking> => {
   const { data, error } = await supabase
     .from('bookings')
@@ -175,6 +241,7 @@ export const updateBookingStatus = async (
 export const modifyBooking = async (
   bookingId: string,
   updates: { date?: string; time?: string },
+  supabase = defaultSupabase,
 ): Promise<Booking> => {
   // تحقق من عدد التعديلات
   const { data: existing } = await supabase
@@ -201,7 +268,7 @@ export const modifyBooking = async (
   return data as Booking
 }
 
-export const cancelBooking = async (bookingId: string): Promise<void> => {
+export const cancelBooking = async (bookingId: string, supabase = defaultSupabase): Promise<void> => {
   // تحقق من نافذة الإلغاء (30 دقيقة)
   const { data: booking } = await supabase
     .from('bookings')
@@ -234,7 +301,7 @@ export const cancelBooking = async (bookingId: string): Promise<void> => {
 
 const POINTS_EARNED_PER_BOOKING = 20
 
-const addLoyaltyPoints = async (userId: string, description: string): Promise<void> => {
+const addLoyaltyPoints = async (userId: string, description: string, supabase = defaultSupabase): Promise<void> => {
   try {
     // upsert نقاط المستخدم
     const { data: existing } = await supabase

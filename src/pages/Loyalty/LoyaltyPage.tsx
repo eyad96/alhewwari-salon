@@ -5,47 +5,86 @@ import { useAuth } from '@/hooks/useAuth'
 import { Link } from 'react-router-dom'
 import { POINTS_PER_HAIRCUT, POINTS_FOR_FREE } from '@/types'
 import toast from 'react-hot-toast'
-
-const DEMO_TRANSACTIONS = [
-  { id: '1', type: 'earned', points: 20, description: 'قص شعر', created_at: '2024-02-10' },
-  { id: '2', type: 'earned', points: 20, description: 'قص شعر + ذقن', created_at: '2024-01-28' },
-  { id: '3', type: 'earned', points: 20, description: 'قص شعر', created_at: '2024-01-15' },
-  { id: '4', type: 'earned', points: 20, description: 'كيراتين', created_at: '2024-01-05' },
-]
-
-const ALL_USERS = [
-  { id: '1', full_name: 'أحمد الخطيب', email: 'ahmed@test.com', points: 80, total_earned: 80 },
-  { id: '2', full_name: 'محمد العمري', email: 'mohammed@test.com', points: 40, total_earned: 140 },
-  { id: '3', full_name: 'يوسف الحواري', email: 'yousef@test.com', points: 60, total_earned: 60 },
-]
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getUserLoyalty, getUserTransactions, redeemPoints, adminAddPoints } from '@/services/loyalty'
 
 const LoyaltyPage: React.FC = () => {
-  const { user, isAdmin } = useAuth()
-  const [userPoints, setUserPoints] = useState(80)
-  const [transactions, setTransactions] = useState(DEMO_TRANSACTIONS)
-  const [allUsers, setAllUsers] = useState(ALL_USERS)
-  const [addingPoints, setAddingPoints] = useState<string | null>(null)
+  const { user, isAdmin, getAuthenticatedClient } = useAuth()
+  const queryClient = useQueryClient()
+  const [addingPointsId, setAddingPointsId] = useState<string | null>(null)
   const [pointsToAdd, setPointsToAdd] = useState(20)
 
+  // 1. استعلام نقاط المستخدم الحالي
+  const { data: loyaltyData } = useQuery({
+    queryKey: ['user-loyalty', user?.id],
+    queryFn: async () => {
+      const authSupabase = await getAuthenticatedClient()
+      return getUserLoyalty(user!.id, authSupabase)
+    },
+    enabled: !!user,
+  })
+
+  // 2. استعلام معاملات المستخدم الحالي
+  const { data: transactions = [] } = useQuery({
+    queryKey: ['user-transactions', user?.id],
+    queryFn: async () => {
+      const authSupabase = await getAuthenticatedClient()
+      return getUserTransactions(user!.id, authSupabase)
+    },
+    enabled: !!user,
+  })
+
+  // 3. استعلام جميع المستخدمين (أدمن) - استعلام علاقة موحد لتخفيف حمل قاعدة البيانات
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['admin-all-profiles'],
+    queryFn: async () => {
+      const authSupabase = await getAuthenticatedClient()
+      const { data } = await authSupabase
+        .from('profiles')
+        .select('id, full_name, email, loyalty_points(points)')
+      
+      return (data || []).map((p: any) => ({
+        id: p.id,
+        full_name: p.full_name,
+        email: p.email,
+        points: p.loyalty_points?.[0]?.points || 0
+      }))
+    },
+    enabled: !!isAdmin,
+  })
+
+  const userPoints = loyaltyData?.points || 0
+  const totalEarned = loyaltyData?.total_earned || 0
   const progress = Math.min((userPoints / POINTS_FOR_FREE) * 100, 100)
-  const haircuts = Math.floor(userPoints / POINTS_PER_HAIRCUT)
+  const haircutsCount = Math.floor(totalEarned / POINTS_PER_HAIRCUT)
 
-  const handleRedeem = () => {
-    if (userPoints < POINTS_FOR_FREE) {
-      toast.error(`تحتاج ${POINTS_FOR_FREE - userPoints} نقطة إضافية`)
-      return
+  // استبدال النقاط
+  const redeemMutation = useMutation({
+    mutationFn: async () => {
+      const authSupabase = await getAuthenticatedClient()
+      return redeemPoints(user!.id, POINTS_FOR_FREE, authSupabase)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-loyalty', user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['user-transactions', user?.id] })
+      toast.success('🎉 تهانينا! حصلت على حلاقة مجانية!')
+    },
+    onError: (err: any) => toast.error(err.message)
+  })
+
+  // إضافة نقاط يدوياً (أدمن)
+  const adminAddMutation = useMutation({
+    mutationFn: async ({ userId, points }: { userId: string, points: number }) => {
+      const authSupabase = await getAuthenticatedClient()
+      return adminAddPoints(userId, points, 'إضافة يدوية من المسؤول', authSupabase)
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-all-profiles'] })
+      queryClient.invalidateQueries({ queryKey: ['user-loyalty', variables.userId] })
+      setAddingPointsId(null)
+      toast.success(`✅ تم إضافة ${variables.points} نقطة بنجاح`)
     }
-    setUserPoints(p => p - POINTS_FOR_FREE)
-    toast.success('🎉 تهانينا! حصلت على حلاقة مجانية!')
-  }
-
-  const handleAdminAddPoints = (userId: string) => {
-    setAllUsers(prev => prev.map(u =>
-      u.id === userId ? { ...u, points: u.points + pointsToAdd, total_earned: u.total_earned + pointsToAdd } : u
-    ))
-    setAddingPoints(null)
-    toast.success(`✅ تم إضافة ${pointsToAdd} نقطة بنجاح`)
-  }
+  })
 
   return (
     <div className="min-h-screen py-12 px-4">
@@ -102,7 +141,7 @@ const LoyaltyPage: React.FC = () => {
                 </div>
                 <div className="text-right">
                   <Award className="w-12 h-12 text-yellow-400 opacity-40" />
-                  <p className="text-gray-500 text-xs mt-2">{haircuts} حلاقة</p>
+                  <p className="text-gray-500 text-xs mt-2">{haircutsCount} حلاقة سابقة</p>
                 </div>
               </div>
 
@@ -133,9 +172,9 @@ const LoyaltyPage: React.FC = () => {
 
               <div className="grid grid-cols-3 gap-3 mb-6">
                 {[
-                  { icon: '✂️', label: 'حلاقات', value: haircuts },
-                  { icon: '⭐', label: 'نقطة مكتسبة', value: userPoints },
-                  { icon: '🎁', label: 'حلاقات مجانية', value: Math.floor(userPoints / POINTS_FOR_FREE) },
+                  { icon: '✂️', label: 'إجمالي الحلاقات', value: haircutsCount },
+                  { icon: '⭐', label: 'نقطة متاحة', value: userPoints },
+                  { icon: '🎁', label: 'حلاقات مجانية قادمة', value: Math.floor(userPoints / POINTS_FOR_FREE) },
                 ].map(stat => (
                   <div key={stat.label} className="glass rounded-xl p-3 text-center">
                     <div className="text-2xl mb-1">{stat.icon}</div>
@@ -146,36 +185,19 @@ const LoyaltyPage: React.FC = () => {
               </div>
 
               <button
-                onClick={handleRedeem}
-                disabled={userPoints < POINTS_FOR_FREE}
+                onClick={() => redeemMutation.mutate()}
+                disabled={userPoints < POINTS_FOR_FREE || redeemMutation.isPending}
                 className="btn-gold w-full py-3 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                <Gift className="w-5 h-5" />
-                {userPoints >= POINTS_FOR_FREE ? 'استبدل نقاطك بحلاقة مجانية! 🎉' : `تحتاج ${POINTS_FOR_FREE - userPoints} نقطة أخرى`}
+                {redeemMutation.isPending ? (
+                   <div className="loader w-5 h-5 border-2 border-black/30 border-t-black" />
+                ) : (
+                  <>
+                    <Gift className="w-5 h-5" />
+                    {userPoints >= POINTS_FOR_FREE ? 'استبدل نقاطك بحلاقة مجانية! 🎉' : `تحتاج ${POINTS_FOR_FREE - userPoints} نقطة أخرى`}
+                  </>
+                )}
               </button>
-            </motion.div>
-
-            {/* كيف يعمل البرنامج */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="card p-6 mb-8"
-            >
-              <h3 className="text-white font-bold text-lg mb-4">⭐ كيف يعمل البرنامج؟</h3>
-              <div className="grid sm:grid-cols-3 gap-4">
-                {[
-                  { step: '1', emoji: '💈', title: 'احلق', desc: 'قم بأي حجز في صالوننا أو منزلك' },
-                  { step: '2', emoji: '⭐', title: 'اكسب', desc: `احصل على ${POINTS_PER_HAIRCUT} نقطة مع كل حلاقة` },
-                  { step: '3', emoji: '🎁', title: 'استبدل', desc: `${POINTS_FOR_FREE} نقطة = حلاقة مجانية كاملة!` },
-                ].map(item => (
-                  <div key={item.step} className="text-center p-4 glass rounded-xl">
-                    <div className="text-4xl mb-3">{item.emoji}</div>
-                    <h4 className="text-yellow-400 font-bold mb-1">{item.title}</h4>
-                    <p className="text-gray-400 text-sm">{item.desc}</p>
-                  </div>
-                ))}
-              </div>
             </motion.div>
 
             {/* سجل المعاملات */}
@@ -190,11 +212,12 @@ const LoyaltyPage: React.FC = () => {
                 سجل النقاط
               </h3>
               <div className="space-y-3">
+                {transactions.length === 0 && <p className="text-gray-500 text-center py-4">لا توجد معاملات بعد</p>}
                 {transactions.map(tx => (
                   <div key={tx.id} className="flex items-center justify-between p-3 glass rounded-xl">
                     <div>
                       <p className="text-white text-sm font-medium">{tx.description}</p>
-                      <p className="text-gray-500 text-xs">{tx.created_at}</p>
+                      <p className="text-gray-500 text-xs">{new Date(tx.created_at).toLocaleDateString('ar-SA')}</p>
                     </div>
                     <span className={`font-black text-lg ${tx.type === 'earned' ? 'text-green-400' : 'text-red-400'}`}>
                       {tx.type === 'earned' ? '+' : '-'}{tx.points} ⭐
@@ -219,7 +242,7 @@ const LoyaltyPage: React.FC = () => {
               إدارة نقاط المستخدمين
             </h3>
             <div className="space-y-4">
-              {allUsers.map(u => (
+              {allUsers.map((u: any) => (
                 <div key={u.id} className="flex items-center justify-between p-4 glass rounded-xl">
                   <div>
                     <p className="text-white font-bold">{u.full_name}</p>
@@ -230,7 +253,7 @@ const LoyaltyPage: React.FC = () => {
                       <div className="text-yellow-400 font-black text-xl">{u.points}</div>
                       <div className="text-gray-500 text-xs">نقطة</div>
                     </div>
-                    {addingPoints === u.id ? (
+                    {addingPointsId === u.id ? (
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -239,13 +262,13 @@ const LoyaltyPage: React.FC = () => {
                           className="input-field w-20 py-1.5 text-sm text-center"
                         />
                         <button
-                          onClick={() => handleAdminAddPoints(u.id)}
+                          onClick={() => adminAddMutation.mutate({ userId: u.id, points: pointsToAdd })}
                           className="btn-gold py-1.5 px-3 text-sm"
                         >
                           تأكيد
                         </button>
                         <button
-                          onClick={() => setAddingPoints(null)}
+                          onClick={() => setAddingPointsId(null)}
                           className="text-gray-400 hover:text-white text-sm"
                         >
                           إلغاء
@@ -253,7 +276,7 @@ const LoyaltyPage: React.FC = () => {
                       </div>
                     ) : (
                       <button
-                        onClick={() => setAddingPoints(u.id)}
+                        onClick={() => { setAddingPointsId(u.id); setPointsToAdd(20); }}
                         className="btn-outline-gold py-1.5 px-3 text-sm flex items-center gap-1"
                       >
                         <Plus className="w-3 h-3" />

@@ -1,23 +1,23 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ShoppingCart, Plus, Minus, X, CheckCircle, Filter, Search,
-  Trash2, Edit, PackagePlus, AlertTriangle, RefreshCw
+  Heart, Plus, X, Search, Trash2, Edit, PackagePlus, AlertTriangle, RefreshCw
 } from 'lucide-react'
-import { useCart } from '@/hooks/useCart'
 import { useAuth } from '@/hooks/useAuth'
-import { getProducts, createProduct, deleteProduct, updateProduct } from '@/services/products'
+import { useAdmin } from '@/hooks/useAdmin'
+import { getProducts, createProduct, deleteProduct, updateProduct, toggleProductLike } from '@/services/products'
 import type { Product } from '@/types'
 import ImageUpload from '@/components/shared/ImageUpload'
 import type { CloudinaryUploadResult } from '@/lib/cloudinary'
 import toast from 'react-hot-toast'
 
 const CATEGORIES: Array<{ id: 'all' | Product['category']; label: string; emoji: string }> = [
-  { id: 'all', label: 'الكل', emoji: '🛍️' },
-  { id: 'perfume', label: 'عطور', emoji: '🌹' },
-  { id: 'cream', label: 'عناية', emoji: '💆' },
-  { id: 'tool', label: 'أدوات', emoji: '✂️' },
+  { id: 'all', label: 'الكل', emoji: '✨' },
+  { id: 'cream', label: 'عناية بالبشرة والشعر', emoji: '💆' },
+  { id: 'tool', label: 'أدوات حلاقة', emoji: '✂️' },
+  { id: 'perfume', label: 'عطور فاخرة', emoji: '🌹' },
   { id: 'other', label: 'أخرى', emoji: '📦' },
 ]
 
@@ -51,6 +51,7 @@ const ProductForm: React.FC<ProductFormProps> = ({ product, onClose, onSuccess }
   })
   const [uploadedImage, setUploadedImage] = useState<CloudinaryUploadResult | null>(null)
   const [saving, setSaving] = useState(false)
+  const { getAuthenticatedClient } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,10 +72,12 @@ const ProductForm: React.FC<ProductFormProps> = ({ product, onClose, onSuccess }
       }
 
       if (product) {
-        await updateProduct(product.id, data)
+        const authSupabase = await getAuthenticatedClient()
+        await updateProduct(product.id, data, authSupabase)
         toast.success('✅ تم تحديث المنتج')
       } else {
-        await createProduct(data)
+        const authSupabase = await getAuthenticatedClient()
+        await createProduct(data, authSupabase)
         toast.success('✅ تم إضافة المنتج')
       }
 
@@ -209,15 +212,13 @@ const ProductForm: React.FC<ProductFormProps> = ({ product, onClose, onSuccess }
 // صفحة المنتجات الرئيسية
 // ==============================
 const ProductsPage: React.FC = () => {
-  const { user, isAdmin } = useAuth()
-  const { items, addItem, removeItem, updateQuantity, total, clearCart } = useCart()
+  const navigate = useNavigate()
+  const { user, getAuthenticatedClient } = useAuth()
+  const { isAdmin } = useAdmin()
   const queryClient = useQueryClient()
 
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [showCart, setShowCart] = useState(false)
-  const [showCheckout, setShowCheckout] = useState(false)
-  const [orderSuccess, setOrderSuccess] = useState(false)
   const [showProductForm, setShowProductForm] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | undefined>()
 
@@ -229,7 +230,10 @@ const ProductsPage: React.FC = () => {
 
   // حذف منتج
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteProduct(id),
+    mutationFn: async (id: string) => {
+      const authSupabase = await getAuthenticatedClient()
+      return deleteProduct(id, authSupabase)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       toast.success('✅ تم حذف المنتج')
@@ -237,28 +241,37 @@ const ProductsPage: React.FC = () => {
     onError: () => toast.error('فشل حذف المنتج'),
   })
 
+  // إعجاب بمنتج
+  const toggleLikeMutation = useMutation({
+    mutationFn: async ({ productId, isLiked }: { productId: string; isLiked: boolean }) => {
+      const authSupabase = await getAuthenticatedClient()
+      return toggleProductLike(user!.id, productId, isLiked, authSupabase)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+    onError: (err: any) => {
+      toast.error(err.message || 'حدث خطأ أثناء معالجة الإعجاب')
+    },
+  })
+
+  const handleLikeToggle = (productId: string, isLiked: boolean) => {
+    if (!user) {
+      toast.error('يرجى تسجيل الدخول أولاً للإعجاب بمنتجاتنا الفاخرة')
+      setTimeout(() => {
+        navigate(`/login?redirect=/products`)
+      }, 1500)
+      return
+    }
+    toggleLikeMutation.mutate({ productId, isLiked })
+  }
+
   const filtered = products.filter(
     (p) =>
       !searchQuery ||
       p.name.includes(searchQuery) ||
       p.description.includes(searchQuery),
   )
-
-  const cartItem = (id: string) => items.find((i) => i.product.id === id)
-
-  const handleAddToCart = (product: Product) => {
-    addItem(product)
-    toast.success(`✅ تم إضافة "${product.name}" إلى السلة`)
-  }
-
-  const handleCheckout = async () => {
-    clearCart()
-    setShowCheckout(false)
-    setShowCart(false)
-    setOrderSuccess(true)
-    toast.success('🎉 تم استلام طلبك! سنتواصل معك قريباً')
-    setTimeout(() => setOrderSuccess(false), 6000)
-  }
 
   return (
     <div className="min-h-screen py-12 px-4">
@@ -271,7 +284,7 @@ const ProductsPage: React.FC = () => {
           className="flex flex-wrap items-center justify-between gap-4 mb-12"
         >
           <div>
-            <p className="section-subtitle mb-2">المتجر</p>
+            <p className="section-subtitle mb-2">معرض المنتجات الفاخرة</p>
             <h1 className="text-4xl font-black text-white">
               منتجاتنا <span className="gold-text">الفاخرة</span>
             </h1>
@@ -287,37 +300,8 @@ const ProductsPage: React.FC = () => {
                 منتج جديد
               </button>
             )}
-
-            <button
-              onClick={() => setShowCart(true)}
-              className="relative btn-outline-gold flex items-center gap-2 px-5 py-2.5"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              السلة
-              {items.length > 0 && (
-                <span className="absolute -top-2 -right-2 w-5 h-5 gold-gradient rounded-full text-black text-xs font-bold flex items-center justify-center">
-                  {items.length}
-                </span>
-              )}
-            </button>
           </div>
         </motion.div>
-
-        {/* نجاح الطلب */}
-        {orderSuccess && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8 p-5 rounded-2xl flex items-center gap-4"
-            style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)' }}
-          >
-            <CheckCircle className="w-8 h-8 text-green-400" />
-            <div>
-              <p className="text-white font-bold">تم استلام طلبك بنجاح! 🎉</p>
-              <p className="text-gray-400 text-sm">سنتواصل معك خلال 24 ساعة لتأكيد التوصيل</p>
-            </div>
-          </motion.div>
-        )}
 
         {/* فلاتر وبحث */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
@@ -335,9 +319,9 @@ const ProductsPage: React.FC = () => {
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 whitespace-nowrap ${
                   selectedCategory === cat.id
-                    ? 'gold-gradient text-black'
+                    ? 'gold-gradient text-black font-bold shadow-lg shadow-yellow-500/20'
                     : 'glass text-gray-300 hover:text-yellow-400'
                 }`}
               >
@@ -359,7 +343,7 @@ const ProductsPage: React.FC = () => {
           <div className="text-center py-12 glass rounded-2xl">
             <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
             <p className="text-white font-bold mb-2">تعذر تحميل المنتجات</p>
-            <p className="text-gray-400 text-sm">تأكد من إعداد Supabase وتشغيل ملف SQL</p>
+            <p className="text-gray-400 text-sm">تأكد من إعداد Supabase وتشغيل ملف SQL الخاص بنظام الإعجابات</p>
           </div>
         )}
 
@@ -367,31 +351,28 @@ const ProductsPage: React.FC = () => {
         {!isLoading && !error && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {filtered.map((product, index) => {
-              const inCart = cartItem(product.id)
               const catInfo = CATEGORIES.find((c) => c.id === product.category)
+              const isLiked = user ? product.likes?.includes(user.id) : false
+
               return (
                 <motion.div
                   key={product.id}
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.08 }}
-                  className="card group overflow-hidden"
+                  className="card group overflow-hidden flex flex-col h-[380px]"
                 >
-                  <div className="relative overflow-hidden h-52">
+                  {/* صورة المنتج */}
+                  <div className="relative overflow-hidden h-52 shrink-0">
                     <img
                       src={product.image_url || 'https://via.placeholder.com/400x300?text=Product'}
                       alt={product.name}
                       className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
-                    <div className="absolute top-3 left-3 flex gap-1">
-                      <span className="badge-gold text-xs">
-                        {catInfo?.emoji} {catInfo?.label}
-                      </span>
-                    </div>
                     {product.stock === 0 && (
                       <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                         <span className="text-white font-bold text-sm bg-red-500/80 px-3 py-1 rounded-full">
-                          نفد المخزون
+                          غير متوفر حالياً
                         </span>
                       </div>
                     )}
@@ -419,45 +400,45 @@ const ProductsPage: React.FC = () => {
                     )}
                   </div>
 
-                  <div className="p-4">
-                    <h3 className="text-white font-bold mb-1 group-hover:text-yellow-400 transition-colors">
-                      {product.name}
-                    </h3>
-                    <p className="text-gray-400 text-sm mb-3 line-clamp-2">{product.description}</p>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-yellow-400 font-black text-xl">{product.price} د.أ</span>
+                  {/* تفاصيل المنتج */}
+                  <div className="p-4 flex flex-col justify-between flex-1">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-xs text-yellow-400/80 font-medium">
+                          {catInfo?.emoji} {catInfo?.label}
+                        </span>
                         {product.stock > 0 && product.stock <= 5 && (
-                          <p className="text-orange-400 text-xs mt-0.5">آخر {product.stock} قطع!</p>
+                          <span className="text-[10px] text-orange-400 bg-orange-400/10 px-2 py-0.5 rounded-full border border-orange-400/20">
+                            محدود
+                          </span>
                         )}
                       </div>
+                      <h3 className="text-white font-bold text-base group-hover:text-yellow-400 transition-colors line-clamp-1">
+                        {product.name}
+                      </h3>
+                      <p className="text-gray-400 text-xs mt-1 line-clamp-2 leading-relaxed">
+                        {product.description}
+                      </p>
+                    </div>
 
-                      {inCart ? (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => updateQuantity(product.id, inCart.quantity - 1)}
-                            className="w-7 h-7 rounded-full glass flex items-center justify-center text-yellow-400 hover:bg-yellow-400/20"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="text-white font-bold w-5 text-center">{inCart.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(product.id, inCart.quantity + 1)}
-                            className="w-7 h-7 rounded-full gold-gradient flex items-center justify-center text-black"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleAddToCart(product)}
-                          disabled={product.stock === 0}
-                          className="btn-gold text-sm px-3 py-2 disabled:opacity-40"
-                        >
-                          أضف للسلة
-                        </button>
-                      )}
+                    <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                      <span className="text-yellow-400 font-black text-lg">{product.price} د.أ</span>
+
+                      <button
+                        onClick={() => handleLikeToggle(product.id, !!isLiked)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-300 ${
+                          isLiked
+                            ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30'
+                            : 'glass text-gray-400 hover:text-white border border-white/5'
+                        }`}
+                      >
+                        <Heart
+                          className={`w-4 h-4 transition-transform duration-300 ${
+                            isLiked ? 'fill-yellow-400 scale-110 text-yellow-400' : 'text-gray-400 hover:scale-110'
+                          }`}
+                        />
+                        <span className="text-xs font-bold">{product.likes_count || 0}</span>
+                      </button>
                     </div>
                   </div>
                 </motion.div>
@@ -471,104 +452,6 @@ const ProductsPage: React.FC = () => {
             <p className="text-gray-400 text-lg">لا توجد منتجات في هذه الفئة</p>
           </div>
         )}
-
-        {/* سلة التسوق */}
-        <AnimatePresence>
-          {showCart && (
-            <div className="fixed inset-0 z-50 flex justify-end">
-              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCart(false)} />
-              <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25 }}
-                className="relative w-full max-w-md glass-dark flex flex-col"
-              >
-                <div className="flex items-center justify-between p-6 border-b border-white/10">
-                  <h3 className="text-white font-bold text-xl">سلة التسوق ({items.length})</h3>
-                  <button onClick={() => setShowCart(false)} className="text-gray-400 hover:text-white">
-                    <X className="w-6 h-6" />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                  {items.length === 0 ? (
-                    <div className="text-center text-gray-400 py-12">
-                      <ShoppingCart className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                      <p>السلة فارغة</p>
-                    </div>
-                  ) : (
-                    items.map((item) => (
-                      <div key={item.product.id} className="flex items-center gap-4 p-3 glass rounded-xl">
-                        <img
-                          src={item.product.image_url}
-                          alt={item.product.name}
-                          className="w-14 h-14 object-cover rounded-lg"
-                        />
-                        <div className="flex-1">
-                          <p className="text-white text-sm font-bold">{item.product.name}</p>
-                          <p className="text-yellow-400 text-sm">
-                            {item.product.price} × {item.quantity} ={' '}
-                            <span className="font-bold">{(item.product.price * item.quantity).toFixed(2)} د.أ</span>
-                          </p>
-                        </div>
-                        <button onClick={() => removeItem(item.product.id)} className="text-gray-500 hover:text-red-400">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {items.length > 0 && (
-                  <div className="p-6 border-t border-white/10">
-                    <div className="flex justify-between mb-4">
-                      <span className="text-gray-400">الإجمالي</span>
-                      <span className="text-yellow-400 font-black text-2xl">{total.toFixed(2)} د.أ</span>
-                    </div>
-                    <button
-                      onClick={() => { setShowCart(false); setShowCheckout(true) }}
-                      className="btn-gold w-full py-3 text-lg"
-                    >
-                      إتمام الشراء
-                    </button>
-                  </div>
-                )}
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* نافذة الدفع */}
-        <AnimatePresence>
-          {showCheckout && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowCheckout(false)} />
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className="relative glass-dark rounded-2xl p-8 w-full max-w-md z-10"
-              >
-                <button onClick={() => setShowCheckout(false)} className="absolute top-4 left-4 text-gray-400 hover:text-white">
-                  <X className="w-5 h-5" />
-                </button>
-                <h3 className="text-white font-black text-2xl mb-6">تأكيد الطلب</h3>
-                <div className="space-y-4 mb-6">
-                  <input className="input-field" placeholder="الاسم الكامل *" required />
-                  <input className="input-field" placeholder="رقم الهاتف *" type="tel" required />
-                  <input className="input-field" placeholder="عنوان التوصيل" />
-                  <textarea className="input-field resize-none" rows={2} placeholder="ملاحظات..." />
-                </div>
-                <div className="p-4 glass rounded-xl mb-6 text-center">
-                  <p className="text-gray-400 text-sm">💳 الدفع عند الاستلام</p>
-                  <p className="text-yellow-400 font-black text-3xl mt-1">{total.toFixed(2)} د.أ</p>
-                </div>
-                <button onClick={handleCheckout} className="btn-gold w-full py-3 text-lg">
-                  ✅ تأكيد الطلب
-                </button>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
 
         {/* نموذج المنتج */}
         <AnimatePresence>

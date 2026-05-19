@@ -9,6 +9,7 @@ export interface User {
   phone?: string
   role: 'customer' | 'admin'
   avatar_url?: string
+  loyalty_points?: number
   created_at: string
 }
 
@@ -38,6 +39,8 @@ export interface Product {
   image_url: string
   stock: number
   created_at: string
+  likes_count?: number
+  likes?: string[]
 }
 
 export interface SignUpForm {

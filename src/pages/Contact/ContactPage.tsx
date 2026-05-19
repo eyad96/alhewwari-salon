@@ -16,16 +16,33 @@ const ContactPage: React.FC = () => {
       return
     }
     setLoading(true)
-    await new Promise(r => setTimeout(r, 1200))
-    setSent(true)
-    toast.success('✅ تم إرسال رسالتك بنجاح!')
-    setLoading(false)
+
+    try {
+      const text = encodeURIComponent(
+        `*💬 رسالة تواصل جديدة من الموقع:*\n\n` +
+        `👤 *الاسم الكامل:* ${form.name}\n` +
+        `✉️ *البريد الإلكتروني:* ${form.email}\n\n` +
+        `📝 *الرسالة:*\n${form.message}`
+      )
+      const whatsappUrl = `https://wa.me/${WHATSAPP_NUMBER}?text=${text}`
+      
+      // Delay slightly for smooth button state transition
+      await new Promise(r => setTimeout(r, 600))
+      
+      window.open(whatsappUrl, '_blank')
+      setSent(true)
+      toast.success('✅ تم فتح المحادثة عبر واتساب!')
+    } catch (err) {
+      toast.error('حدث خطأ أثناء فتح واتساب')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <div className="min-h-screen py-12 px-4">
       <div className="max-w-6xl mx-auto">
-        
+
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -39,7 +56,7 @@ const ContactPage: React.FC = () => {
         </motion.div>
 
         <div className="grid lg:grid-cols-2 gap-12">
-          
+
           {/* معلومات التواصل */}
           <motion.div
             initial={{ opacity: 0, x: 50 }}
@@ -51,7 +68,7 @@ const ContactPage: React.FC = () => {
               {[
                 { icon: <Phone className="w-5 h-5" />, title: 'واتساب', value: '0787146476', href: `https://wa.me/${WHATSAPP_NUMBER}` },
                 { icon: <Mail className="w-5 h-5" />, title: 'البريد الإلكتروني', value: 'info@alhewwari.com', href: 'mailto:info@alhewwari.com' },
-                { icon: <MapPin className="w-5 h-5" />, title: 'الموقع', value: 'عمّان، الأردن', href: '#map' },
+                { icon: <MapPin className="w-5 h-5" />, title: 'الموقع', value: 'الأردن , الرصيفة , عوجان الجبل', href: '#map' },
                 { icon: <Clock className="w-5 h-5" />, title: 'ساعات العمل', value: WORKING_HOURS.label, href: undefined },
               ].map(info => (
                 <div key={info.title} className="flex items-start gap-4">

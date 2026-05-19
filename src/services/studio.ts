@@ -1,134 +1,157 @@
-import { supabase } from '@/lib/supabase'
-import { uploadToCloudinary, deleteFromCloudinary } from '@/lib/cloudinary'
+import { supabase as defaultSupabase } from '@/lib/supabase'
 import type { StudioPhoto } from '@/types'
+import { uploadToCloudinary } from '@/lib/cloudinary'
+
 
 // ==============================
 // استعلامات الصور
 // ==============================
 
-export const getStudioPhotos = async (): Promise<StudioPhoto[]> => {
+export const getStudioPhotos = async (supabase = defaultSupabase): Promise<StudioPhoto[]> => {
   const { data, error } = await supabase
-    .from('studio_photos')
-    .select('*')
-    .order('uploaded_at', { ascending: false })
+    .from('gallery_photos')
+    .select('*, likes:photo_likes(user_id)')
+    .order('created_at', { ascending: false })
 
   if (error) throw error
-  return data as StudioPhoto[]
+
+  return (data || []).map((p: any) => ({
+    id: p.id,
+    image_url: p.image_url,
+    caption: p.caption || '',
+    likes_count: p.likes?.length || 0,
+    uploaded_at: p.created_at,
+    likes: p.likes?.map((l: any) => l.user_id) || []
+  })) as any[]
 }
 
-export const getTopLikedPhoto = async (): Promise<StudioPhoto | null> => {
-  const { data } = await supabase
-    .from('studio_photos')
-    .select('*')
-    .order('likes_count', { ascending: false })
-    .limit(1)
-    .single()
-  return data as StudioPhoto | null
+export const getTopLikedPhoto = async (supabase = defaultSupabase): Promise<StudioPhoto | null> => {
+  const photos = await getStudioPhotos(supabase)
+  if (photos.length === 0) return null
+  return photos.sort((a, b) => b.likes_count - a.likes_count)[0]
 }
 
 // ==============================
 // الإعجابات
 // ==============================
 
-export const getUserLikes = async (userId: string): Promise<string[]> => {
-  const { data } = await supabase
-    .from('studio_likes')
+export const getUserLikes = async (userId: string, supabase = defaultSupabase): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from('photo_likes')
     .select('photo_id')
     .eq('user_id', userId)
-  return data?.map((l) => l.photo_id) || []
+
+  if (error) throw error
+  return data?.map((l: any) => l.photo_id) || []
 }
 
 export const toggleLike = async (
   userId: string,
   photoId: string,
   isLiked: boolean,
+  supabase = defaultSupabase,
 ): Promise<number> => {
   if (isLiked) {
-    // إزالة اللايك
-    await supabase
-      .from('studio_likes')
+    const { error } = await supabase
+      .from('photo_likes')
       .delete()
       .eq('user_id', userId)
       .eq('photo_id', photoId)
 
-    const { data } = await supabase.rpc('decrement_photo_likes', { p_id: photoId })
-    return data ?? 0
+    if (error) throw error
+    return 0
   } else {
-    // إضافة لايك
-    const { error: likeError } = await supabase
-      .from('studio_likes')
+    const { error } = await supabase
+      .from('photo_likes')
       .insert({ user_id: userId, photo_id: photoId })
 
-    if (likeError && likeError.code !== '23505') throw likeError // تجاهل duplicate
-
-    const { data } = await supabase.rpc('increment_photo_likes', { p_id: photoId })
-    return data ?? 0
+    if (error && error.code !== '23505') throw error
+    return 0
   }
 }
 
 // ==============================
-// رفع الصور (Cloudinary + Supabase)
+// رفع الصور (Supabase Storage)
 // ==============================
 
 export interface UploadStudioPhotoParams {
   file: File
   caption?: string
   onProgress?: (progress: number) => void
+  supabase?: any
 }
 
 export const uploadStudioPhoto = async ({
   file,
   caption,
-  onProgress,
+  supabase = defaultSupabase,
 }: UploadStudioPhotoParams): Promise<StudioPhoto> => {
-  // 1. رفع الصورة إلى Cloudinary
-  const cloudResult = await uploadToCloudinary(file, 'salon-alhewwari/studio', onProgress)
+  // 1. Upload directly to Cloudinary
+  const result = await uploadToCloudinary(file, 'salon-alhewwari/studio')
 
-  // 2. حفظ سجل في Supabase
+  // 2. Save the resulting secure_url and caption to Supabase gallery_photos table
   const { data, error } = await supabase
-    .from('studio_photos')
+    .from('gallery_photos')
     .insert({
-      image_url: cloudResult.secure_url,
-      cloudinary_public_id: cloudResult.public_id,
+      image_url: result.secure_url,
       caption: caption || '',
-      likes_count: 0,
     })
     .select()
     .single()
 
   if (error) throw error
-  return data as StudioPhoto
+  return {
+    id: data.id,
+    image_url: data.image_url,
+    caption: data.caption,
+    likes_count: 0,
+    uploaded_at: data.created_at,
+  } as StudioPhoto
 }
+
 
 export const updateStudioPhoto = async (
   photoId: string,
   updates: { caption?: string },
+  supabase = defaultSupabase,
 ): Promise<StudioPhoto> => {
   const { data, error } = await supabase
-    .from('studio_photos')
+    .from('gallery_photos')
     .update(updates)
     .eq('id', photoId)
     .select()
     .single()
 
   if (error) throw error
-  return data as StudioPhoto
+  return {
+    id: data.id,
+    image_url: data.image_url,
+    caption: data.caption,
+    likes_count: 0,
+    uploaded_at: data.created_at,
+  } as StudioPhoto
 }
 
 export const deleteStudioPhoto = async (
   photoId: string,
-  cloudinaryPublicId?: string,
+  image_url?: string,
+  supabase = defaultSupabase,
 ): Promise<void> => {
-  // 1. حذف اللايكات المرتبطة
-  await supabase.from('studio_likes').delete().eq('photo_id', photoId)
-
-  // 2. حذف السجل من Supabase
-  const { error } = await supabase.from('studio_photos').delete().eq('id', photoId)
+  // 1. Delete from database
+  const { error } = await supabase.from('gallery_photos').delete().eq('id', photoId)
   if (error) throw error
 
-  // 3. حذف من Cloudinary (server-side في الإنتاج)
-  if (cloudinaryPublicId) {
-    await deleteFromCloudinary(cloudinaryPublicId)
+  // 2. Delete from storage
+  if (image_url) {
+    try {
+      const parts = image_url.split('/studio-images/')
+      if (parts.length > 1) {
+        const filePath = parts[1]
+        await supabase.storage.from('studio-images').remove([filePath])
+      }
+    } catch (e) {
+      console.error('Failed to remove image from storage:', e)
+    }
   }
 }
 
@@ -136,20 +159,11 @@ export const deleteStudioPhoto = async (
 // تصفير الإعجابات (أدمن)
 // ==============================
 
-export const resetAllLikes = async (): Promise<void> => {
-  // حذف جميع الإعجابات
-  const { error: likesError } = await supabase
-    .from('studio_likes')
+export const resetAllLikes = async (supabase = defaultSupabase): Promise<void> => {
+  const { error } = await supabase
+    .from('photo_likes')
     .delete()
-    .neq('id', '00000000-0000-0000-0000-000000000000') // delete all
-
-  if (likesError) throw likesError
-
-  // تصفير العدادات
-  const { error: photosError } = await supabase
-    .from('studio_photos')
-    .update({ likes_count: 0 })
     .neq('id', '00000000-0000-0000-0000-000000000000')
 
-  if (photosError) throw photosError
+  if (error) throw error
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Heart, Trash2, Trophy, Plus, X, Edit2, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Heart, Trash2, Trophy, Plus, X, RefreshCw, AlertTriangle, Upload } from 'lucide-react'
 import {
   getStudioPhotos,
   getUserLikes,
@@ -9,11 +9,9 @@ import {
   resetAllLikes,
   uploadStudioPhoto,
   deleteStudioPhoto,
-  updateStudioPhoto,
 } from '@/services/studio'
 import { useAuth } from '@/hooks/useAuth'
-import ImageUpload from '@/components/shared/ImageUpload'
-import type { CloudinaryUploadResult } from '@/lib/cloudinary'
+import { useAdmin } from '@/hooks/useAdmin'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import type { StudioPhoto } from '@/types'
@@ -27,30 +25,34 @@ interface UploadModalProps {
 }
 
 const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) => {
-  const [uploadedResult, setUploadedResult] = useState<CloudinaryUploadResult | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [caption, setCaption] = useState('')
   const [saving, setSaving] = useState(false)
+  const { getAuthenticatedClient } = useAuth()
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setSelectedFile(file)
+      setPreviewUrl(URL.createObjectURL(file))
+    }
+  }
 
   const handleSave = async () => {
-    if (!uploadedResult) {
-      toast.error('يرجى رفع صورة أولاً')
+    if (!selectedFile) {
+      toast.error('يرجى اختيار صورة أولاً')
       return
     }
 
     setSaving(true)
     try {
+      const authSupabase = await getAuthenticatedClient()
+      
       await uploadStudioPhoto({
-        file: new File([], ''), // placeholder - already uploaded
+        file: selectedFile,
         caption,
-      })
-      // In real case, we save the cloudinary result directly
-      // Let's save via a direct Supabase insert
-      const { supabase } = await import('@/lib/supabase')
-      await supabase.from('studio_photos').insert({
-        image_url: uploadedResult.secure_url,
-        cloudinary_public_id: uploadedResult.public_id,
-        caption: caption || '',
-        likes_count: 0,
+        supabase: authSupabase,
       })
 
       toast.success('✅ تم رفع الصورة بنجاح!')
@@ -79,14 +81,39 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) => {
           </button>
         </div>
 
-        <ImageUpload
-          onUpload={(result) => setUploadedResult(result)}
-          onRemove={() => setUploadedResult(null)}
-          folder="salon-alhewwari/studio"
-          label="صورة الاستوديو"
-          aspectRatio="portrait"
-          className="mb-4"
-        />
+        <div className="mb-4">
+          <label className="text-gray-400 text-sm mb-2 block">صورة الاستوديو</label>
+          <div className="relative h-56 max-w-md w-full rounded-2xl border-2 border-dashed border-yellow-500/30 hover:border-yellow-400/60 transition-all cursor-pointer overflow-hidden bg-white/3 flex flex-col items-center justify-center p-4">
+            {previewUrl ? (
+              <>
+                <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedFile(null)
+                    setPreviewUrl(null)
+                  }}
+                  className="absolute top-2 left-2 w-8 h-8 bg-red-500 rounded-full flex items-center justify-center text-white hover:bg-red-600 transition-colors shadow-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </>
+            ) : (
+              <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                <Upload className="w-8 h-8 text-yellow-400 mb-2" />
+                <span className="text-gray-300 text-sm font-medium">اختر صورة</span>
+                <span className="text-gray-500 text-xs mt-1">انقر للاختيار من جهازك</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </label>
+            )}
+          </div>
+        </div>
 
         <div className="mb-4">
           <label className="text-gray-400 text-sm mb-1.5 block">تعليق الصورة (اختياري)</label>
@@ -102,7 +129,7 @@ const UploadModal: React.FC<UploadModalProps> = ({ onClose, onSuccess }) => {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            disabled={!uploadedResult || saving}
+            disabled={!selectedFile || saving}
             className="btn-gold flex-1 py-3 disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {saving ? (
@@ -219,7 +246,8 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
 // صفحة الاستوديو الرئيسية
 // ==============================
 const StudioPage: React.FC = () => {
-  const { user, isAdmin } = useAuth()
+  const { user, getAuthenticatedClient } = useAuth()
+  const { isAdmin } = useAdmin()
   const queryClient = useQueryClient()
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
@@ -231,47 +259,40 @@ const StudioPage: React.FC = () => {
     error: photosError,
   } = useQuery({
     queryKey: ['studio-photos'],
-    queryFn: getStudioPhotos,
+    queryFn: () => getStudioPhotos(),
   })
 
   // استعلام لايكات المستخدم
   const { data: userLikes = [] } = useQuery({
     queryKey: ['user-likes', user?.id],
-    queryFn: () => getUserLikes(user!.id),
+    queryFn: async () => {
+      const authSupabase = await getAuthenticatedClient()
+      return getUserLikes(user!.id, authSupabase)
+    },
     enabled: !!user,
   })
 
   // Toggle like mutation
   const likeMutation = useMutation({
-    mutationFn: ({ photoId, isLiked }: { photoId: string; isLiked: boolean }) =>
-      toggleLike(user!.id, photoId, isLiked),
-    onMutate: async ({ photoId, isLiked }) => {
-      await queryClient.cancelQueries({ queryKey: ['studio-photos'] })
-      await queryClient.cancelQueries({ queryKey: ['user-likes', user?.id] })
-
-      // Optimistic update
-      queryClient.setQueryData<StudioPhoto[]>(['studio-photos'], (old) =>
-        old?.map((p) =>
-          p.id === photoId
-            ? { ...p, likes_count: p.likes_count + (isLiked ? -1 : 1) }
-            : p,
-        ) ?? [],
-      )
-      queryClient.setQueryData<string[]>(['user-likes', user?.id], (old) =>
-        isLiked ? (old ?? []).filter((id) => id !== photoId) : [...(old ?? []), photoId],
-      )
+    mutationFn: async ({ photoId, isLiked }: { photoId: string; isLiked: boolean }) => {
+      const authSupabase = await getAuthenticatedClient()
+      return toggleLike(user!.id, photoId, isLiked, authSupabase)
     },
-    onError: () => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['studio-photos'] })
       queryClient.invalidateQueries({ queryKey: ['user-likes', user?.id] })
+    },
+    onError: () => {
       toast.error('حدث خطأ. حاول مرة أخرى')
     },
   })
 
   // Delete mutation
   const deleteMutation = useMutation({
-    mutationFn: (photo: StudioPhoto) =>
-      deleteStudioPhoto(photo.id, (photo as any).cloudinary_public_id),
+    mutationFn: async (photo: StudioPhoto) => {
+      const authSupabase = await getAuthenticatedClient()
+      return deleteStudioPhoto(photo.id, photo.image_url, authSupabase)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['studio-photos'] })
       toast.success('✅ تم حذف الصورة')
@@ -281,7 +302,10 @@ const StudioPage: React.FC = () => {
 
   // Reset likes mutation
   const resetMutation = useMutation({
-    mutationFn: resetAllLikes,
+    mutationFn: async () => {
+      const authSupabase = await getAuthenticatedClient()
+      return resetAllLikes(authSupabase)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['studio-photos'] })
       queryClient.invalidateQueries({ queryKey: ['user-likes', user?.id] })
@@ -294,7 +318,7 @@ const StudioPage: React.FC = () => {
   const topPhoto = [...photos].sort((a, b) => b.likes_count - a.likes_count)[0]
 
   return (
-    <div className="min-h-screen py-12 px-4">
+    <div className="min-h-screen py-12 px-4 animate-fade-in">
       <div className="max-w-7xl mx-auto">
 
         {/* Header */}
@@ -326,7 +350,7 @@ const StudioPage: React.FC = () => {
             }}
           >
             <div className="flex items-center gap-4 flex-wrap">
-              <Trophy className="w-10 h-10 text-yellow-400 shrink-0 animate-float" />
+              <Trophy className="w-10 h-10 text-yellow-400 shrink-0 animate-bounce" />
               <div className="flex-1 min-w-0">
                 <h3 className="text-yellow-400 font-bold text-lg">
                   🏆 الصورة الأولى بأكثر إعجابات
@@ -383,7 +407,7 @@ const StudioPage: React.FC = () => {
         {photosLoading && (
           <div className="flex items-center justify-center py-20">
             <div className="text-center">
-              <div className="loader mx-auto mb-4"></div>
+              <div className="loader mx-auto mb-4 animate-spin"></div>
               <p className="text-gray-400">جاري تحميل الصور...</p>
             </div>
           </div>
@@ -425,18 +449,18 @@ const StudioPage: React.FC = () => {
             ) : (
               <AnimatePresence>
                 <div className="masonry-grid">
-                  {photos.map((photo, index) => (
+                  {photos.map((photo) => (
                     <PhotoCard
                       key={photo.id}
                       photo={photo}
-                      isLiked={userLikes.includes(photo.id)}
+                      isLiked={(photo as any).likes?.includes(user?.id)}
                       isTop={photo.id === topPhoto?.id && photo.likes_count > 0}
                       isAdmin={isAdmin}
                       isLoggedIn={!!user}
                       onLike={() =>
                         likeMutation.mutate({
                           photoId: photo.id,
-                          isLiked: userLikes.includes(photo.id),
+                          isLiked: (photo as any).likes?.includes(user?.id),
                         })
                       }
                       onDelete={
