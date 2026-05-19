@@ -18,6 +18,8 @@ const SignUpPage = lazy(() => import('@/pages/Auth/SignUpPage'))
 const ForgotPasswordPage = lazy(() => import('@/pages/Auth/ForgotPasswordPage'))
 const SsoCallbackPage = lazy(() => import('@/pages/Auth/SsoCallbackPage'))
 const DashboardPage = lazy(() => import('@/pages/Dashboard/DashboardPage'))
+const UserDashboardPage = lazy(() => import('@/pages/Dashboard/UserDashboardPage'))
+const AdminDashboardPage = lazy(() => import('@/pages/Dashboard/AdminDashboardPage'))
 const ContactPage = lazy(() => import('@/pages/Contact/ContactPage'))
 const PrivacyPage = lazy(() => import('@/pages/Legal/PrivacyPage'))
 const TermsPage = lazy(() => import('@/pages/Legal/TermsPage'))
@@ -59,9 +61,9 @@ function App() {
               <Route path="/contact" element={<MainLayout><ContactPage /></MainLayout>} />
               <Route path="/privacy" element={<MainLayout><PrivacyPage /></MainLayout>} />
               <Route path="/terms" element={<MainLayout><TermsPage /></MainLayout>} />
-              <Route path="/dashboard" element={<AdminRoute><MainLayout><DashboardPage /></MainLayout></AdminRoute>} />
-              <Route path="/user-dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
-              <Route path="/admin" element={<AdminRoute><MainLayout><DashboardPage /></MainLayout></AdminRoute>} />
+              <Route path="/dashboard" element={<MainLayout><DashboardPage /></MainLayout>} />
+              <Route path="/user-dashboard" element={<MainLayout><UserDashboardPage /></MainLayout>} />
+              <Route path="/admin" element={<AdminRoute><MainLayout><AdminDashboardPage /></MainLayout></AdminRoute>} />
               <Route path="/setup" element={<MainLayout><SetupPage /></MainLayout>} />
               {/* صفحات المصادقة بدون Footer */}
               <Route path="/sso-callback" element={<MainLayout><SsoCallbackPage /></MainLayout>} />

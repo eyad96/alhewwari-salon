@@ -22,9 +22,9 @@ const Header: React.FC = () => {
   const [scrolled, setScrolled] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   
-  const { user: profileUser } = useAuth()
+  const { user: profileUser, isAdmin: authIsAdmin } = useAuth()
   const { isSignedIn, user } = useUser()
-  const isAdmin = !!(isSignedIn && user?.publicMetadata?.role === 'admin')
+  const isAdmin = !!(isSignedIn && authIsAdmin)
   
   const location = useLocation()
   const navigate = useNavigate()

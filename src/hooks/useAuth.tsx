@@ -206,7 +206,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     <AuthContext.Provider value={{
       user,
       loading,
-      isAdmin: ((clerkUser as any)?.publicMetadata?.role === 'admin') || user?.role === 'admin',
+      isAdmin: user?.role === 'admin',
       refetch,
       getAuthenticatedClient,
     }}>
