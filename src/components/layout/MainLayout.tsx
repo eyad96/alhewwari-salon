@@ -2,6 +2,7 @@ import React from 'react'
 import Header from './Header'
 import Footer from './Footer'
 import WhatsAppFloat from '@/components/shared/WhatsAppFloat'
+import PWAInstallButton from './PWAInstallButton'
 import { Toaster } from 'react-hot-toast'
 
 interface MainLayoutProps {
@@ -17,6 +18,7 @@ const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       </main>
       <Footer />
       <WhatsAppFloat />
+      <PWAInstallButton />
       <Toaster
         position="top-center"
         reverseOrder={false}

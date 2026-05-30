@@ -1,0 +1,18 @@
+{
+  "name": "صالون الحوّاري",
+  "short_name": "الحوّاري",
+  "description": "صالون الحوّاري - حلاقة فاخرة وتجربة أناقة لا مثيل لها",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#d4af37",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
