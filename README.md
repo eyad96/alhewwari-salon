@@ -1,189 +1,60 @@
-# 💈 صالون الحوّاري | Al-Hewwari Salon
+# 💈 Al-Hewwari Salon | Premium Booking & Management Platform
 
-منصة رقمية فاخرة ومتكاملة لحجز المواعيد، عرض المنتجات، وإدارة برنامج الولاء لصالون الحوّاري. تم تصميم وتطوير هذا النظام ليمثل المعيار الذهبي في تطبيقات الويب الحديثة وتطبيقات الجوال التقدمية (PWA)، مع توفير أعلى درجات الأمان وتجربة مستخدم بصرية راقية ومذهلة.
-
----
-
-## ✨ المميزات الفريدة والأنظمة المدمجة
-
-### 1. 📅 محرك حجز مواعيد ديناميكي وذكي
-* **إدارة مرنة للمواعيد**: إمكانية إضافة ساعات عمل مخصصة ومحددة ليوم معين دون التأثير على بقية الأيام.
-* **منع الحجوزات المزدوجة**: حماية تامة على مستوى قاعدة البيانات باستخدام الفهارس الفريدة الجزئية (Partial Unique Indexes) في Supabase، مما يمنع رياضياً أي تداخل أو حجز مزدوج لنفس الوقت.
-* **الحد من إساءة الاستخدام**: يُسمح للعميل بحجز موعد نشط واحد فقط في النظام، مع إمكانية تعديله مرة واحدة فقط من لوحة التحكم لمنع احتكار المواعيد.
-* **دمج المواعيد التلقائي**: دمج ذكي وسلس بين ساعات العمل الافتراضية للصالون والساعات المضافة يدوياً من الأدمن لعرضها بشكل مرتب.
-
-### 2. 🛡️ نظام الأمان الشامل (Zod Validation Security System)
-* **حماية خالية من الثغرات (Zero-Bypass Policy)**: تطبيق فلاتر التحقق من صحة البيانات باستخدام مكتبة Zod على مستوى طبقة الخدمات (Services) مباشرة قبل أي إدخال أو تعديل في قاعدة البيانات.
-* **تأمين واجهات الـ API الـ Serverless**: حماية كاملة للمنافذ الخلفية وتدقيق المدخلات لتفادي التلاعب بالبيانات أو ثغرات الحقن (Injection).
-* **نماذج تواصل آمنة**: التحقق من المدخلات وصيغ البريد الإلكتروني بدقة وعرض إشعارات وتنبيهات تفاعلية واضحة باللغة العربية.
-
-### 3. 📱 تطبيق ويب تقدمي بالكامل (PWA Support)
-* **تثبيت التطبيق بنقرة واحدة**: دعم كامل لتثبيت الموقع كتطبيق مستقل على شاشات الهواتف وأجهزة الديسكتوب.
-* **دعم هواتف الـ iOS (Safari)**: شاشات إرشادية وتفاعلية أنيقة ترشد مستخدمي الآيفون بكيفية إضافة التطبيق للشاشة الرئيسية بخطوات مبسطة.
-
-### 4. 🎁 برنامج الولاء المبتكر (Loyalty Program)
-* **حساب تلقائي للنقاط**: إضافة نقاط ولاء للعميل تلقائياً عند إتمام موعد الحلاقة وتأكيد المسؤول لذلك.
-* **سجل المعاملات**: سجل تفصيلي يوضح كيفية اكتساب واستبدال النقاط بشفافية تامة.
-
-### 5. ⚡ الأداء الفائق وتجزئة الأكواد (Lazy Loading & Suspense)
-* **سرعة تحميل صاروخية**: استخدام خاصية الـ Lazy Loading والـ React Suspense لتجزئة الملفات البرمجية الكبيرة لتقليل حجم الباقة المبدئية عند التصفح لأول مرة.
-* **واجهات تحميل راقية**: معالج شاشات التحميل (CSS Loading Spinners) باللون الذهبي البراق متوافق مع هوية الموقع الفاخرة.
-
-### 6. 🎨 هوية بصرية راقية وعصرية
-* **تصميم زجاجي (Glassmorphism)**: خلفيات شفافة ناعمة وتباين بصري مريح باللون الأسود الملكي.
-* **تدرجات ذهبية عصرية**: استخدام تدرج لوني ذهبي فاخر (`#D4AF37` / `#F0D060` / `#A88B1A`).
-* **شعار وتطابق مثالي للعلامة**: شعار دائري ذهبي أنيق يحتوي على رمز مقص الحلاقة الفاخر كأيقونة فافيكون (`favicon.svg`) وأيقونة PWA موحدة.
+A luxurious, full-stack digital platform custom-built for **Al-Hewwari Salon**. This application serves as a comprehensive booking system, loyalty hub, and administrative dashboard, engineered with a mobile-first philosophy as a Progressive Web App (PWA). It features a high-end, dark-themed **Glassmorphic UI** coupled with top-tier security and database-level integrity.
 
 ---
 
-## 🚀 تشغيل المشروع
+## ✨ Key Features & Architecture
 
-```bash
-cd salon-alhewwari/frontend/vite-project
-npm run dev
-```
+### 1. 📅 Dynamic & Intelligent Booking Engine
+* **Flexible Slot Management**: Admins can override default working hours with custom schedules for specific days without affecting the global timeline.
+* **Zero-Double-Booking Guarantee**: Modeled mathematically using **Supabase Partial Unique Indexes** to completely prevent overlapping appointments at the database level.
+* **Abuse Prevention**: Strict business logic limits clients to a single active booking, editable only once via the client panel to prevent slot hoarding.
+* **Smart Schedule Merging**: Seamlessly merges default business hours with custom admin exceptions into a clean, unified chronological timeline.
 
-الموقع يعمل محلياً على: **http://localhost:5173/**
+### 2. 🛡️ Absolute Security (Zod Validation Layer)
+* **Zero-Bypass Policy**: Data integrity enforced via **Zod schemas** deeply integrated into the service layer, intercepting all read/write operations before reaching the database.
+* **Serverless API Protection**: Bulletproof input validation on Edge Functions/Serverless endpoints to mitigate injection attacks and malicious payload tampering.
+* **Robust Form Handling**: Strict validation for all customer inquiry forms, accompanied by graceful, localized error states and smooth feedback.
 
----
+### 3. 📱 Enterprise-Grade Progressive Web App (PWA)
+* **One-Click Installation**: Full support for standalone, app-like experiences on both Desktop and Mobile devices.
+* **Custom iOS Guide**: Built-in, native-feeling interactive prompt screens guiding Safari/iOS users on how to manually "Add to Home Screen".
 
-## 🔑 إعداد Supabase (مطلوب)
+### 4. 🎁 Automated Loyalty & Rewards Program
+* **Automated Point Ledger**: Automatically calculates and rewards loyalty points to clients upon appointment completion and admin verification.
+* **Transaction History**: A transparent, immutable log allowing clients to view exactly how they earned or redeemed their points over time.
 
-### الخطوة 1: الحصول على مفاتيح Supabase
-1. اذهب إلى [supabase.com](https://supabase.com)
-2. أنشئ مشروعاً جديداً أو افتح مشروعك الحالي
-3. اذهب إلى **Settings → API**
-4. انسخ:
-   - **Project URL** (مثال: `https://xxxxx.supabase.co`)
-   - **anon/public key** (يبدأ بـ `eyJ...`)
+### 5. ⚡ Advanced Performance Optimization
+* **Code Splitting & Lazy Loading**: Significantly reduced initial bundle size using `React.lazy()` and `React.Suspense` for large route components (e.g., Admin Dashboards).
+* **Luxury Loading States**: Tailored golden CSS loading spinners that preserve visual continuity and luxury branding during asynchronous fetches.
 
-### الخطوة 2: تحديث ملف `.env`
-```env
-VITE_SUPABASE_URL=https://your-project-id.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_gy8r95agtTtIicZtk_wzoQ_8siZHHy7
-```
-
-### الخطوة 3: إنشاء جداول قاعدة البيانات
-1. اذهب إلى **Supabase Dashboard → SQL Editor**
-2. انسخ محتوى ملف `supabase_setup.sql` وشغّله
-
-### الخطوة 4: تفعيل OAuth (اختياري)
-1. اذهب إلى **Authentication → Providers**
-2. فعّل **Google** و**Facebook** وأضف مفاتيحهم
+### 6. 🎨 Premium Vision & Brand Identity
+* **Premium Glassmorphism**: Ultra-modern, sleek dark-mode aesthetics utilizing blurred, translucent panels against deep, royal blacks.
+* **Curated Golden Palette**: Meticulously styled using luxury gold gradients (`#D4AF37`, `#F0D060`, `#A88B1A`).
+* **Unified Branding**: Cohesive vector iconography spanning from a custom-designed geometric scissor favicon to high-resolution PWA splash assets.
 
 ---
 
-## 📁 هيكل المشروع
+## 🛠️ Tech Stack & Ecosystem
 
-```
-src/
-├── components/
-│   ├── layout/
-│   │   ├── Header.tsx        # شريط التنقل
-│   │   ├── Footer.tsx        # تذييل الصفحة
-│   │   └── MainLayout.tsx    # التخطيط الرئيسي
-│   └── shared/
-│       ├── WhatsAppFloat.tsx  # زر واتساب الثابت
-│       └── StarRating.tsx     # تقييم النجوم
-├── hooks/
-│   ├── useAuth.tsx           # إدارة المصادقة
-│   └── useCart.tsx           # إدارة سلة التسوق
-├── lib/
-│   └── supabase.ts           # Supabase client
-├── pages/
-│   ├── Home/HomePage.tsx     # الصفحة الرئيسية
-│   ├── Studio/StudioPage.tsx # الاستوديو
-│   ├── Booking/BookingPage.tsx # الحجز
-│   ├── Loyalty/LoyaltyPage.tsx # الولاء
-│   ├── Reviews/ReviewsPage.tsx # التقييمات
-│   ├── Products/ProductsPage.tsx # المنتجات
-│   ├── Blog/BlogPage.tsx     # المدونة
-│   ├── Auth/                 # صفحات المصادقة
-│   ├── Dashboard/            # لوحة التحكم
-│   ├── Contact/              # تواصل معنا
-│   └── Legal/                # الخصوصية والشروط
-├── services/                 # Supabase API calls
-├── types/index.ts            # TypeScript types والثوابت
-├── App.tsx                   # الجذر مع Routes
-└── index.css                 # Global styles
-```
+### Frontend & Core Utilities
+* **Framework**: React.js (Vite-powered for blazing fast HMR)
+* **Styling**: Tailwind CSS v4 (Utilizing the latest performance-oriented utility engine)
+* **Routing**: React Router DOM (With dynamic, declarative route chunking)
+* **Animations**: Framer Motion (For fluid layout transitions and physics-based micro-interactions)
+* **State & Data Fetching**: `@tanstack/react-query` (For robust server-state management, intelligent caching, and background synchronization)
 
----
+### Backend & Infrastructure
+* **Database & BaaS**: Supabase (PostgreSQL under the hood, utilizing RLS policies and relational constraints)
+* **Authentication**: Supabase Auth (Secure JWT-based session management)
 
-## 🎨 نظام التصميم
+### Validation & Form Architecture
+* **Form Management**: React Hook Form (Uncontrolled components for optimal re-render performance)
+* **Schema Validation**: Zod (Type-safe runtime validation schema)
 
-| العنصر | القيمة |
-|--------|---------|
-| الخلفية | `#0A0A0A` |
-| النص | `#FFFFFF` |
-| الذهبي | `#D4AF37` |
-| الرمادي | `#6B7280` |
-| الخط | Cairo / Tajawal |
-| الاتجاه | RTL |
-
----
-
-## 📱 الصفحات المبنية
-
-| الصفحة | المسار | الوصف |
-|--------|--------|-------|
-| الرئيسية | `/` | Hero + خدمات + بانر خصم |
-| الاستوديو | `/studio` | معرض صور + لايكات |
-| الحجز | `/booking` | تقويم + أوقات متاحة |
-| الولاء | `/loyalty` | نقاط + استبدال |
-| التقييمات | `/reviews` | تقييمات بالنجوم |
-| المنتجات | `/products` | متجر + سلة |
-| المدونة | `/blog` | مقالات + محرر أدمن |
-| تسجيل الدخول | `/login` | بريد + Google/Facebook |
-| التسجيل | `/signup` | حساب جديد |
-| نسيان المرور | `/forgot-password` | إعادة تعيين |
-| لوحة التحكم | `/dashboard` | للمستخدم والأدمن |
-| تواصل معنا | `/contact` | نموذج + خريطة |
-| الخصوصية | `/privacy` | سياسة الخصوصية |
-| الشروط | `/terms` | الشروط والأحكام |
-
----
-
-## 👑 صلاحيات الأدمن
-
-لجعل مستخدم أدمن، شغّل هذا الـ SQL في Supabase:
-```sql
-update profiles set role = 'admin' where email = 'your-email@example.com';
-```
-
-### مميزات الأدمن:
-- تصفير لايكات الاستوديو
-- إدارة جميع الحجوزات
-- إضافة نقاط للمستخدمين
-- نشر مقالات المدونة
-- إدارة المنتجات
-
----
-
-## ⚙️ الثوابت القابلة للتعديل
-
-في `src/types/index.ts`:
-```ts
-export const WHATSAPP_NUMBER = '962787146476'  // رقم الواتساب
-export const URGENT_FEE = 5                     // رسوم الحجز الفوري
-export const POINTS_PER_HAIRCUT = 20            // نقاط لكل حلاقة
-export const POINTS_FOR_FREE = 100              // نقاط للحلاقة المجانية
-```
-
----
-
-## 🛠️ المكتبات المستخدمة
-
-| المكتبة | الاستخدام |
-|---------|----------|
-| `@supabase/supabase-js` | قاعدة البيانات والمصادقة |
-| `react-router-dom` | التنقل بين الصفحات |
-| `@tanstack/react-query` | إدارة البيانات |
-| `react-hook-form` + `zod` | النماذج والتحقق |
-| `framer-motion` | الأنيميشن |
-| `react-calendar` | تقويم الحجز |
-| `react-hot-toast` | الإشعارات |
-| `lucide-react` | الأيقونات |
-| `date-fns` | معالجة التواريخ |
-| `tailwindcss v4` | التنسيق |
+### Helper Libraries
+* **Date Manipulation**: `date-fns` (Immutable, lightweight date parsing and formatting)
+* **Calendar Engine**: `react-calendar` (Highly customized for tailor-made time slot selections)
+* **Notifications**: `react-hot-toast` (Lightweight, fully accessible alert system)
+* **Icons**: `lucide-react` (Crisp, highly responsive vector icons)
