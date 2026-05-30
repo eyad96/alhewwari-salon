@@ -1,6 +1,7 @@
 import { supabase as defaultSupabase } from '@/lib/supabase'
 import { uploadToCloudinary } from '@/lib/cloudinary'
 import type { Product } from '@/types'
+import { productSchema } from '@/lib/schemas'
 
 // ==============================
 // استعلام المنتجات
@@ -51,6 +52,16 @@ export interface CreateProductData {
 }
 
 export const createProduct = async (data: CreateProductData, supabase = defaultSupabase): Promise<Product> => {
+  // Enforce Zod validation at the service level boundary
+  productSchema.parse({
+    name: data.name,
+    description: data.description || '',
+    price: data.price,
+    category: data.category,
+    stock: data.stock,
+    image_url: data.image_url || '',
+  })
+
   let image_url = data.image_url || ''
 
   // رفع الصورة إلى Cloudinary إذا كانت موجودة
@@ -81,6 +92,9 @@ export const updateProduct = async (
   updates: Partial<CreateProductData>,
   supabase = defaultSupabase,
 ): Promise<Product> => {
+  // Enforce Zod validation at the service level boundary
+  productSchema.partial().parse(updates)
+
   let image_url = updates.image_url
 
   if (updates.imageFile) {

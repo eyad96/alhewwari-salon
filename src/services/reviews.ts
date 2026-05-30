@@ -1,4 +1,5 @@
 import { supabase as defaultSupabase } from '@/lib/supabase'
+import { reviewSchema } from '@/lib/schemas'
 
 export interface Review {
   id: string
@@ -42,6 +43,9 @@ export const upsertReview = async (
   comment: string,
   supabase = defaultSupabase
 ): Promise<Review> => {
+  // Enforce Zod validation at the service level boundary
+  reviewSchema.parse({ user_id: userId, rating, comment })
+
   const { data, error } = await supabase
     .from('reviews')
     .upsert(

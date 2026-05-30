@@ -1,12 +1,26 @@
 import { VercelRequest, VercelResponse } from '@vercel/node'
 import { clerkClient, verifyToken } from '@clerk/clerk-sdk-node'
 import { createClient } from '@supabase/supabase-js'
+import { z } from 'zod'
+
+const syncBodySchema = z.object({
+  clerkUserId: z.string({
+    required_error: 'clerkUserId is required',
+  }).min(1, 'clerkUserId cannot be empty'),
+})
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { clerkUserId } = req.body || {}
-  if (!clerkUserId) return res.status(400).json({ error: 'clerkUserId is required' })
+  const bodyParsed = syncBodySchema.safeParse(req.body)
+  if (!bodyParsed.success) {
+    return res.status(400).json({
+      error: 'Invalid request payload',
+      details: bodyParsed.error.flatten().fieldErrors,
+    })
+  }
+
+  const { clerkUserId } = bodyParsed.data
 
   const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY
   const SUPABASE_URL = process.env.SUPABASE_URL

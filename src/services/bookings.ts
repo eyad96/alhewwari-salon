@@ -1,6 +1,7 @@
 import { supabase as defaultSupabase } from '@/lib/supabase'
 import type { Booking } from '@/types'
 import { addMinutes, format, parse, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns'
+import { bookingSchema } from '@/lib/schemas'
 
 // ==============================
 // الأوقات المتاحة
@@ -166,6 +167,18 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
     throw new Error("Missing user identification (user_id / userId) inside payload creation!")
   }
 
+  // Enforce Zod validation at the service level boundary
+  bookingSchema.parse({
+    user_id: targetUserId,
+    service_name: data.service_name,
+    service_price: data.service_price,
+    booking_type: data.booking_type,
+    date: data.date,
+    time: data.time,
+    is_urgent: data.is_urgent,
+    notes: data.notes || '',
+  })
+
   // Check if this date and time is already booked by an active (pending or confirmed) booking
   const { data: existingBooking, error: checkError } = await supabase
     .from('bookings')
@@ -293,6 +306,9 @@ export const modifyBooking = async (
   updates: { date?: string; time?: string },
   supabase = defaultSupabase,
 ): Promise<Booking> => {
+  // Enforce Zod validation at the service level boundary
+  bookingSchema.partial().parse(updates)
+
   // تحقق من عدد التعديلات والبيانات الحالية
   const { data: existing, error: existingError } = await supabase
     .from('bookings')

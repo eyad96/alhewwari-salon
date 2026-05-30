@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { MapPin, Phone, Mail, Clock, Send, CheckCircle } from 'lucide-react'
 import { WHATSAPP_NUMBER, WORKING_HOURS } from '@/types'
 import toast from 'react-hot-toast'
+import { contactSchema } from '@/lib/schemas'
 
 const ContactPage: React.FC = () => {
   const [form, setForm] = useState({ name: '', email: '', message: '' })
@@ -11,8 +12,10 @@ const ContactPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name || !form.email || !form.message) {
-      toast.error('يرجى ملء جميع الحقول')
+    const result = contactSchema.safeParse(form)
+    if (!result.success) {
+      const firstError = result.error.errors[0]?.message || 'يرجى التحقق من المدخلات'
+      toast.error(firstError)
       return
     }
     setLoading(true)
