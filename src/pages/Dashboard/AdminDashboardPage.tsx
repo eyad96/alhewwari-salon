@@ -17,6 +17,7 @@ import {
   addAvailableSlot,
   removeAvailableSlot,
   getManualSlots,
+  deleteBooking,
 } from '@/services/bookings'
 import ImageUpload from '@/components/shared/ImageUpload'
 import toast from 'react-hot-toast'
@@ -254,6 +255,20 @@ const AdminDashboardPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
       toast.success('✅ تم إلغاء الحجز')
+    }
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const authSupabase = await getAuthenticatedClient()
+      return deleteBooking(id, authSupabase)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-bookings'] })
+      toast.success('✅ تم حذف وإزالة الحجز من السجلات بنجاح')
+    },
+    onError: (err: any) => {
+      toast.error('❌ فشل حذف الحجز: ' + err.message)
     }
   })
 
@@ -538,7 +553,7 @@ const AdminDashboardPage: React.FC = () => {
                             </button>
                           )}
                           <button onClick={() => setEditingBooking(origBooking)} className="text-gray-400 hover:text-white transition-colors ml-2" title="تعديل الحجز"><Edit className="w-4 h-4 inline" /></button>
-                          <button onClick={() => { if (window.confirm('هل تريد إلغاء وإزالة هذا الحجز من السجلات؟')) cancelMutation.mutate(appt.id) }} className="text-red-400 hover:text-red-300 transition-colors" title="إلغاء وإزالة الحجز"><Trash2 className="w-4 h-4 inline" /></button>
+                          <button onClick={() => { if (window.confirm('هل تريد حذف وإزالة هذا الحجز نهائياً من السجلات؟')) deleteMutation.mutate(appt.id) }} className="text-red-400 hover:text-red-300 transition-colors" title="حذف وإزالة الحجز نهائياً"><Trash2 className="w-4 h-4 inline" /></button>
                         </td>
                       </tr>
                     )

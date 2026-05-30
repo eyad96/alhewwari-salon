@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabase as defaultSupabase } from '@/lib/supabase'
 
 export interface Review {
   id: string
@@ -13,7 +13,7 @@ export interface Review {
 // استعلام التقييمات
 // ==============================
 
-export const getReviews = async (): Promise<Review[]> => {
+export const getReviews = async (supabase = defaultSupabase): Promise<Review[]> => {
   const { data, error } = await supabase
     .from('reviews')
     .select('*, user:profiles(full_name, avatar_url)')
@@ -23,7 +23,7 @@ export const getReviews = async (): Promise<Review[]> => {
   return data as Review[]
 }
 
-export const getUserReview = async (userId: string): Promise<Review | null> => {
+export const getUserReview = async (userId: string, supabase = defaultSupabase): Promise<Review | null> => {
   const { data } = await supabase
     .from('reviews')
     .select('*')
@@ -40,6 +40,7 @@ export const upsertReview = async (
   userId: string,
   rating: number,
   comment: string,
+  supabase = defaultSupabase
 ): Promise<Review> => {
   const { data, error } = await supabase
     .from('reviews')
@@ -54,7 +55,8 @@ export const upsertReview = async (
   return data as Review
 }
 
-export const deleteReview = async (reviewId: string): Promise<void> => {
+export const deleteReview = async (reviewId: string, supabase = defaultSupabase): Promise<void> => {
   const { error } = await supabase.from('reviews').delete().eq('id', reviewId)
   if (error) throw error
 }
+

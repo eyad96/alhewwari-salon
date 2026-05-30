@@ -1,5 +1,5 @@
 import { VercelRequest, VercelResponse } from '@vercel/node'
-import { Clerk } from '@clerk/clerk-sdk-node'
+import { clerkClient, verifyToken } from '@clerk/clerk-sdk-node'
 import { createClient } from '@supabase/supabase-js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -19,27 +19,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader
   if (!token) return res.status(401).json({ error: 'Missing authorization token' })
 
+  // Extract Clerk issuer dynamically from the publishable key
+  const publishableKey = process.env.VITE_CLERK_PUBLISHABLE_KEY || ''
+  const base64Part = publishableKey.split('_')[2]
+  const decodedDomain = base64Part
+    ? Buffer.from(base64Part, 'base64').toString('ascii').replace(/[^a-zA-Z0-9.-]/g, '')
+    : ''
+  const issuer = decodedDomain ? `https://${decodedDomain}` : 'https://prime-elf-68.clerk.accounts.dev'
+
   try {
-    const clerk = new Clerk({ apiKey: CLERK_SECRET_KEY })
-    const sessionClaims = clerk.base.verifySessionToken(token)
+    const sessionClaims = await verifyToken(token, {
+      secretKey: CLERK_SECRET_KEY,
+      issuer,
+    })
     if (!sessionClaims || !sessionClaims.sub) {
       return res.status(401).json({ error: 'Invalid Clerk session token' })
     }
 
     const requestingUserId = sessionClaims.sub
-    const requestingUser = await clerk.users.getUser(requestingUserId)
-    const requestingRole = requestingUser?.public_metadata?.role || requestingUser?.private_metadata?.role || null
+    const requestingUser = await clerkClient.users.getUser(requestingUserId)
+    const requestingRole = requestingUser?.publicMetadata?.role || requestingUser?.privateMetadata?.role || null
     if (requestingRole !== 'admin') {
       return res.status(403).json({ error: 'Requires admin role' })
     }
 
-    const targetUser = await clerk.users.getUser(clerkUserId)
+    const targetUser = await clerkClient.users.getUser(clerkUserId)
     if (!targetUser) {
       return res.status(404).json({ error: 'Clerk user not found' })
     }
 
-    const clerkRole = targetUser?.public_metadata?.role || targetUser?.private_metadata?.role || null
-    const fullName = [targetUser?.first_name, targetUser?.last_name].filter(Boolean).join(' ') || targetUser?.primary_email_address || targetUser?.email_addresses?.[0]?.email_address || 'User'
+    const clerkRole = targetUser?.publicMetadata?.role || targetUser?.privateMetadata?.role || null
+    const fullName = [targetUser?.firstName, targetUser?.lastName].filter(Boolean).join(' ') || targetUser?.emailAddresses?.[0]?.emailAddress || 'User'
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     const { data, error } = await supabase
@@ -55,3 +65,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Internal error', details: err.message })
   }
 }
+

@@ -38,3 +38,7 @@ Thumbs.db
 
 .vercel
 .env*.local
+
+# Local developer backups and skill guides
+/skill.md
+/database_scripts/

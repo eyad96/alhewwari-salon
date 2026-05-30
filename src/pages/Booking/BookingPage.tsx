@@ -37,6 +37,8 @@ const BookingPage: React.FC = () => {
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [bookingSuccess, setBookingSuccess] = useState(false)
+  const [hasActiveBooking, setHasActiveBooking] = useState(false)
+  const [activeBookingLoading, setActiveBookingLoading] = useState(false)
 
   // Phone validation & Onboarding states for Booking Page
   const [newPhone, setNewPhone] = useState('')
@@ -81,6 +83,36 @@ const BookingPage: React.FC = () => {
     }
     load()
   }, [selectedDate])
+
+  useEffect(() => {
+    if (isSignedIn && clerkUser) {
+      const checkActiveBooking = async () => {
+        setActiveBookingLoading(true)
+        try {
+          const authSupabase = await getAuthenticatedClient()
+          const { data, error } = await authSupabase
+            .from('bookings')
+            .select('id')
+            .eq('user_id', clerkUser.id)
+            .in('status', ['pending', 'confirmed'])
+            .maybeSingle()
+          
+          if (data) {
+            setHasActiveBooking(true)
+          } else {
+            setHasActiveBooking(false)
+          }
+        } catch (err) {
+          console.error("Failed to check active bookings:", err)
+        } finally {
+          setActiveBookingLoading(false)
+        }
+      }
+      checkActiveBooking()
+    } else {
+      setHasActiveBooking(false)
+    }
+  }, [isSignedIn, clerkUser])
 
   useEffect(() => {
     const pending = localStorage.getItem('pending_booking')
@@ -399,6 +431,27 @@ const BookingPage: React.FC = () => {
           </motion.div>
         )}
 
+        {isSignedIn && hasActiveBooking && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mb-8 p-6 glass rounded-2xl border border-red-500/30 bg-red-950/20 text-right flex flex-col md:flex-row items-center gap-4"
+          >
+            <div className="p-3 bg-red-500/10 rounded-xl text-red-500 shrink-0">
+              <AlertCircle className="w-8 h-8 animate-pulse" />
+            </div>
+            <div>
+              <h4 className="text-white font-black text-lg mb-1">لديك حجز نشط بالفعل في النظام!</h4>
+              <p className="text-gray-400 text-sm leading-relaxed">
+                لحماية عدالة الحجوزات وإعطاء الفرصة لكافة عملاء الصالون، يرجى العلم بأنه لا يمكنك حجز موعد جديد حالياً. يمكنك تعديل حجزك النشط الحالي <span className="text-yellow-400 font-bold">لمرة واحدة فقط</span> إذا توافر وقت بديل، وذلك من خلال لوحة التحكم الخاصة بك.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Link to="/dashboard" className="btn-gold px-5 py-1.5 text-xs font-bold">الانتقال إلى لوحة التحكم لتعديل الحجز</Link>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="grid lg:grid-cols-3 gap-8">
 
@@ -454,29 +507,32 @@ const BookingPage: React.FC = () => {
                   اختر الوقت
                 </h3>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {generateTimeSlots().map(slot => {
-                    const isAvailable = availableSlots.includes(slot)
-                    const isSelected = selectedTime === slot
-                    return (
-                      <button
-                        key={slot}
-                        type="button"
-                        disabled={!isAvailable || slotsLoading}
-                        onClick={() => isAvailable && setValue('time', slot)}
-                        className={`py-2 px-2 rounded-lg text-sm font-medium transition-all ${!isAvailable
-                            ? 'bg-gray-800 text-gray-600 cursor-not-allowed line-through'
-                            : isSelected
+                  {slotsLoading ? (
+                    <div className="col-span-full text-center text-gray-400 py-4">جاري تحميل الأوقات المتاحة...</div>
+                  ) : availableSlots.length === 0 ? (
+                    <div className="col-span-full text-center text-red-400 py-4 font-bold">لا توجد أوقات متاحة للحجز في هذا اليوم.</div>
+                  ) : (
+                    availableSlots.map(slot => {
+                      const isSelected = selectedTime === slot
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          disabled={hasActiveBooking}
+                          onClick={() => setValue('time', slot)}
+                          className={`py-2 px-2 rounded-lg text-sm font-medium transition-all ${
+                            isSelected
                               ? 'gold-gradient text-black font-bold'
                               : 'glass text-gray-300 hover:text-yellow-400 hover:border-yellow-400/40'
-                          }`}
-                      >
-                        {slot}
-                      </button>
-                    )
-                  })}
+                          } ${hasActiveBooking ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          {slot}
+                        </button>
+                      )
+                    })
+                  )}
                 </div>
                 {errors.time && <p className="text-red-400 text-sm mt-2">{errors.time.message}</p>}
-                <p className="text-gray-500 text-xs mt-3">⬜ متاح  |  ▪️ محجوز</p>
               </motion.div>
 
               {/* اختيار الخدمة */}
@@ -667,11 +723,13 @@ const BookingPage: React.FC = () => {
 
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || hasActiveBooking}
                   className="btn-gold w-full mt-5 py-3 disabled:opacity-50 flex items-center justify-center gap-2 font-bold text-sm"
                 >
                   {isSubmitting ? (
                     <div className="loader w-5 h-5 border-2 border-black/30 border-t-black" />
+                  ) : hasActiveBooking ? (
+                    <>غير مسموح بحجوزات متعددة (لديك حجز نشط)</>
                   ) : isSignedIn ? (
                     <>تأكيد الحجز وبثق الموعد <ChevronRight className="w-4 h-4 animate-pulse" /></>
                   ) : (

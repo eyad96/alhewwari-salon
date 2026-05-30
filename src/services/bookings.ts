@@ -29,8 +29,6 @@ export const generateTimeSlots = (): string[] => {
 }
 
 export const getAvailableSlots = async (date: string, supabase = defaultSupabase): Promise<string[]> => {
-  const allSlots = generateTimeSlots()
-
   let bookedTimes: string[] = []
   let manualTimes: string[] = []
 
@@ -53,7 +51,7 @@ export const getAvailableSlots = async (date: string, supabase = defaultSupabase
       console.warn("⚠️ bookings table query error:", bookingsRes.error.message)
     }
 
-    if (!manualRes.error && manualRes.data) {
+    if (!manualRes.error && manualRes.data && manualRes.data.length > 0) {
       manualTimes = manualRes.data.map((m: any) => m.time.slice(0, 5))
     } else if (manualRes.error) {
       console.warn("⚠️ available_slots table query error:", manualRes.error.message)
@@ -62,9 +60,14 @@ export const getAvailableSlots = async (date: string, supabase = defaultSupabase
     console.warn("⚠️ Could not query bookings or available_slots table:", err.message)
   }
 
-  const union = Array.from(new Set([...allSlots, ...manualTimes]))
+  // Combine default working hours slots with manually added available slots
+  const defaultSlots = generateTimeSlots()
+  const baseSlots = Array.from(new Set([...defaultSlots, ...manualTimes]))
 
-  return union.filter((slot) => !bookedTimes.includes(slot)).sort()
+  // Filter out booked slots and sort them alphabetically/chronologically
+  return baseSlots
+    .filter((slot) => !bookedTimes.includes(slot))
+    .sort((a, b) => a.localeCompare(b))
 }
 
 
@@ -163,6 +166,39 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
     throw new Error("Missing user identification (user_id / userId) inside payload creation!")
   }
 
+  // Check if this date and time is already booked by an active (pending or confirmed) booking
+  const { data: existingBooking, error: checkError } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('date', data.date)
+    .eq('time', data.time)
+    .in('status', ['pending', 'confirmed'])
+    .maybeSingle()
+
+  if (checkError) {
+    console.error("⚠️ Error checking availability:", checkError.message)
+  }
+
+  if (existingBooking) {
+    throw new Error('هذا الوقت محجوز بالفعل من قبل مستخدم آخر. يرجى اختيار وقت آخر.')
+  }
+
+  // Check if this user already has an active booking (pending or confirmed)
+  const { data: userActiveBooking, error: userCheckError } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('user_id', targetUserId)
+    .in('status', ['pending', 'confirmed'])
+    .maybeSingle()
+
+  if (userCheckError) {
+    console.error("⚠️ Error checking user active bookings:", userCheckError.message)
+  }
+
+  if (userActiveBooking) {
+    throw new Error('لديك حجز نشط بالفعل في النظام. لا يمكنك إجراء حجز آخر؛ يمكنك تعديل حجزك الحالي مرة واحدة فقط من لوحة التحكم الخاصة بك.')
+  }
+
   const insertPayload = {
     user_id: targetUserId,
     service_name: data.service_name,
@@ -198,6 +234,23 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
 
     console.log("✅ [Supabase Insert Success] Created booking row:", booking)
 
+    // Delete the slot from available_slots table so it is no longer marked as an active manual slot
+    try {
+      const { error: deleteSlotError } = await supabase
+        .from('available_slots')
+        .delete()
+        .eq('date', data.date)
+        .eq('time', data.time)
+
+      if (deleteSlotError) {
+        console.warn("⚠️ Failed to delete slot from available_slots:", deleteSlotError.message)
+      } else {
+        console.log("✅ [available_slots] Removed booked slot from available_slots table")
+      }
+    } catch (slotErr: any) {
+      console.warn("⚠️ [available_slots] Exception while deleting slot:", slotErr.message)
+    }
+
     // إضافة نقاط ولاء
     try {
       await addLoyaltyPoints(targetUserId, data.service_name, supabase)
@@ -214,6 +267,9 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
       hint: err.hint,
       code: err.code
     })
+    if (err.code === '23505' || (err.message && err.message.includes('unique_active_booking'))) {
+      throw new Error('هذا الوقت محجوز بالفعل من قبل مستخدم آخر. يرجى اختيار وقت آخر.')
+    }
     throw err
   }
 }
@@ -243,29 +299,83 @@ export const modifyBooking = async (
   updates: { date?: string; time?: string },
   supabase = defaultSupabase,
 ): Promise<Booking> => {
-  // تحقق من عدد التعديلات
-  const { data: existing } = await supabase
+  // تحقق من عدد التعديلات والبيانات الحالية
+  const { data: existing, error: existingError } = await supabase
     .from('bookings')
-    .select('modified_count, created_at')
+    .select('modified_count, created_at, date, time')
     .eq('id', bookingId)
     .single()
 
-  if (existing?.modified_count >= 1) {
+  if (existingError || !existing) {
+    throw new Error('الحجز غير موجود')
+  }
+
+  if (existing.modified_count >= 1) {
     throw new Error('لقد استنفدت التعديل المسموح به (مرة واحدة فقط)')
   }
 
-  const { data, error } = await supabase
-    .from('bookings')
-    .update({
-      ...updates,
-      modified_count: (existing?.modified_count ?? 0) + 1,
-    })
-    .eq('id', bookingId)
-    .select()
-    .single()
+  // التحقق من توافر الوقت الجديد إذا تم تعديل التاريخ أو الوقت
+  const targetDate = updates.date || existing.date
+  const targetTime = updates.time || existing.time
 
-  if (error) throw error
-  return data as Booking
+  if (updates.date || updates.time) {
+    const { data: duplicateBooking, error: dupError } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('date', targetDate)
+      .eq('time', targetTime)
+      .neq('id', bookingId)
+      .in('status', ['pending', 'confirmed'])
+      .maybeSingle()
+
+    if (dupError) {
+      console.error("⚠️ Error checking slot availability on modify:", dupError.message)
+    }
+
+    if (duplicateBooking) {
+      throw new Error('هذا الوقت محجوز بالفعل من قبل مستخدم آخر. يرجى اختيار وقت آخر.')
+    }
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({
+        ...updates,
+        modified_count: (existing.modified_count ?? 0) + 1,
+      })
+      .eq('id', bookingId)
+      .select()
+      .single()
+
+    if (error) throw error
+
+    // If date or time was updated, delete the newly selected slot from available_slots table
+    if (updates.date || updates.time) {
+      try {
+        const { error: deleteSlotError } = await supabase
+          .from('available_slots')
+          .delete()
+          .eq('date', targetDate)
+          .eq('time', targetTime)
+
+        if (deleteSlotError) {
+          console.warn("⚠️ Failed to delete slot from available_slots on modify:", deleteSlotError.message)
+        } else {
+          console.log("✅ [available_slots] Removed modified booking slot from available_slots table")
+        }
+      } catch (slotErr: any) {
+        console.warn("⚠️ [available_slots] Exception while deleting slot on modify:", slotErr.message)
+      }
+    }
+
+    return data as Booking
+  } catch (err: any) {
+    if (err.code === '23505' || (err.message && err.message.includes('unique_active_booking'))) {
+      throw new Error('هذا الوقت محجوز بالفعل من قبل مستخدم آخر. يرجى اختيار وقت آخر.')
+    }
+    throw err
+  }
 }
 
 export const cancelBooking = async (bookingId: string, supabase = defaultSupabase): Promise<void> => {
@@ -338,3 +448,16 @@ const addLoyaltyPoints = async (userId: string, description: string, supabase = 
     console.error('خطأ في إضافة نقاط الولاء:', err)
   }
 }
+
+// ==============================
+// حذف الحجز نهائياً (مسؤول)
+// ==============================
+export const deleteBooking = async (bookingId: string, supabase = defaultSupabase): Promise<void> => {
+  const { error } = await supabase
+    .from('bookings')
+    .delete()
+    .eq('id', bookingId)
+
+  if (error) throw error
+}
+
