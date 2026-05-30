@@ -5,8 +5,9 @@ import { useAuth } from '@/hooks/useAuth'
 import { Link, Navigate } from 'react-router-dom'
 import { POINTS_FOR_FREE } from '@/types'
 import { useQuery } from '@tanstack/react-query'
-import { getUserBookings } from '@/services/bookings'
+import { getUserBookings, modifyBooking, getAvailableSlots } from '@/services/bookings'
 import toast from 'react-hot-toast'
+import { format } from 'date-fns'
 
 const StatusBadge = ({ status }: { status: string }) => {
   const map: Record<string, { label: string; cls: string }> = {
@@ -32,6 +33,47 @@ const UserDashboardPage: React.FC = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [isEditingProfile, setIsEditingProfile] = useState(false)
 
+  // Edit Booking Modal States
+  const [selectedBookingToEdit, setSelectedBookingToEdit] = useState<any | null>(null)
+  const [editDate, setEditDate] = useState<string>('')
+  const [editTime, setEditTime] = useState<string>('')
+  const [editAvailableSlots, setEditAvailableSlots] = useState<string[]>([])
+  const [editSlotsLoading, setEditSlotsLoading] = useState(false)
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  useEffect(() => {
+    if (editDate) {
+      const fetchSlots = async () => {
+        setEditSlotsLoading(true)
+        try {
+          const slots = await getAvailableSlots(editDate)
+          setEditAvailableSlots(slots)
+        } catch (err) {
+          console.error(err)
+        } finally {
+          setEditSlotsLoading(false)
+        }
+      }
+      fetchSlots()
+    }
+  }, [editDate])
+
+  const handleConfirmEdit = async () => {
+    if (!selectedBookingToEdit || !editDate || !editTime) return
+    setIsSavingEdit(true)
+    try {
+      const authSupabase = await getAuthenticatedClient()
+      await modifyBooking(selectedBookingToEdit.id, { date: editDate, time: editTime }, authSupabase)
+      toast.success('✅ تم تعديل موعد الحجز بنجاح!')
+      setSelectedBookingToEdit(null)
+      refetchAppointments()
+    } catch (err: any) {
+      toast.error(err.message || 'فشل تعديل الموعد')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
   // Sync profile details when user is loaded
   useEffect(() => {
     if (user) {
@@ -48,16 +90,16 @@ const UserDashboardPage: React.FC = () => {
     setIsEditingProfile(false)
   }
 
-  // Customer-specific queries
-  const { data: customerAppointments = [], isLoading: customerAppointmentsLoading } = useQuery({
+  // Customer-specific queries from bookings table directly
+  const { data: customerAppointments = [], isLoading: customerAppointmentsLoading, refetch: refetchAppointments } = useQuery({
     queryKey: ['customer-appointments', user?.id],
     queryFn: async () => {
       const authSupabase = await getAuthenticatedClient()
       const { data, error } = await authSupabase
-        .from('appointments')
+        .from('bookings')
         .select('*')
         .eq('user_id', user?.id)
-        .order('appointment_date', { ascending: false })
+        .order('date', { ascending: false })
       if (error) throw error
       return data || []
     },
@@ -67,12 +109,12 @@ const UserDashboardPage: React.FC = () => {
   const displayBookings = customerAppointments.map((appt: any) => ({
     id: appt.id,
     service_name: appt.service_name || 'جلسة عناية بالصالون',
-    date: appt.appointment_date,
-    time: appt.appointment_time,
+    date: appt.date,
+    time: appt.time.slice(0, 5),
     booking_type: appt.booking_type || 'salon',
     status: appt.status,
     total_price: appt.total_price || appt.service_price || 15,
-    customer_phone: appt.customer_phone || 'بدون هاتف',
+    modified_count: appt.modified_count ?? 0,
   }))
 
   const upcoming = displayBookings.filter((b: any) => b.status === 'pending' || b.status === 'confirmed')
@@ -304,12 +346,31 @@ const UserDashboardPage: React.FC = () => {
                               </div>
                               <StatusBadge status={b.status} />
                             </div>
-                            <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
+                             <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
                               <div className="text-gray-300 text-sm flex flex-col gap-1">
                                 <span className="flex items-center gap-1.5">📅 {b.date}</span>
                                 <span className="flex items-center gap-1.5">⏰ {b.time}</span>
                               </div>
-                              <p className="text-yellow-400 font-black text-xl">{b.total_price} د.أ</p>
+                              <div className="text-left flex flex-col items-end gap-2">
+                                <p className="text-yellow-400 font-black text-xl">{b.total_price} د.أ</p>
+                                {b.modified_count === 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedBookingToEdit(b)
+                                      setEditDate(b.date)
+                                      setEditTime(b.time)
+                                    }}
+                                    className="btn-gold py-1 px-3 rounded-lg text-xs font-bold transition-transform hover:scale-105"
+                                  >
+                                    ✏️ تعديل الموعد (مرة واحدة)
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-gray-500 font-bold border border-white/5 bg-white/5 px-2.5 py-0.5 rounded">
+                                    تم تعديل الموعد مسبقاً
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </motion.div>
                         ))}
@@ -474,6 +535,94 @@ const UserDashboardPage: React.FC = () => {
           )}
         </motion.div>
       </div>
+
+      {/* Modal for Editing Booking */}
+      {selectedBookingToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 text-right" dir="rtl">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="glass border border-yellow-400/20 rounded-3xl p-6 max-w-md w-full space-y-6"
+          >
+            <div>
+              <h3 className="text-white font-black text-xl mb-1 flex items-center gap-2">
+                🗓️ تعديل موعد الحجز
+              </h3>
+              <p className="text-gray-400 text-xs leading-relaxed">
+                تنبيه: تنص سياسة صالون الحوّاري على أنه يمكنك تعديل الموعد <span className="text-yellow-400 font-bold">لمرة واحدة فقط</span>. يرجى اختيار تاريخ ووقت بديل بعناية.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Date Input */}
+              <div>
+                <label className="text-gray-400 text-xs mb-1.5 block">اختر التاريخ الجديد</label>
+                <input
+                  type="date"
+                  value={editDate}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="input-field text-right"
+                />
+              </div>
+
+              {/* Time Selection */}
+              <div>
+                <label className="text-gray-400 text-xs mb-2 block">اختر الوقت الجديد</label>
+                <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto p-1 border border-white/5 rounded-xl bg-black/20">
+                  {editSlotsLoading ? (
+                    <div className="col-span-full text-center text-xs text-gray-500 py-4">جاري التحميل...</div>
+                  ) : editAvailableSlots.length === 0 ? (
+                    <div className="col-span-full text-center text-xs text-red-400 py-4">لا توجد أوقات متاحة لهذا اليوم.</div>
+                  ) : (
+                    editAvailableSlots.map(slot => {
+                      const isSelected = editTime === slot
+                      return (
+                        <button
+                          key={slot}
+                          type="button"
+                          onClick={() => setEditTime(slot)}
+                          className={`py-1.5 px-1.5 rounded-lg text-xs font-bold transition-all ${
+                            isSelected
+                              ? 'gold-gradient text-black'
+                              : 'glass text-gray-300 hover:text-yellow-400'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleConfirmEdit}
+                disabled={isSavingEdit || !editTime}
+                className="flex-1 btn-gold py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+              >
+                {isSavingEdit ? (
+                  <div className="loader w-4 h-4 border-2 border-black/30 border-t-black animate-spin" />
+                ) : (
+                  'تأكيد الموعد الجديد'
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedBookingToEdit(null)}
+                disabled={isSavingEdit}
+                className="px-5 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-gray-300 rounded-xl font-bold text-sm transition-all"
+              >
+                إلغاء
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }
