@@ -251,13 +251,7 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
       console.warn("⚠️ [available_slots] Exception while deleting slot:", slotErr.message)
     }
 
-    // إضافة نقاط ولاء
-    try {
-      await addLoyaltyPoints(targetUserId, data.service_name, supabase)
-      console.log("✅ [Loyalty Points] Added successfully for user:", targetUserId)
-    } catch (loyaltyErr) {
-      console.error("⚠️ [Loyalty Points Error] Failed to update loyalty points:", loyaltyErr)
-    }
+
 
     return booking as Booking
   } catch (err: any) {
