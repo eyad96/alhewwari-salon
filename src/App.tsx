@@ -4,9 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/hooks/useAuth'
 import MainLayout from '@/components/layout/MainLayout'
 import AdminRoute from '@/components/shared/AdminRoute'
+import HomePage from '@/pages/Home/HomePage'
 
 // Lazy loading للصفحات
-const HomePage = lazy(() => import('@/pages/Home/HomePage'))
 const StudioPage = lazy(() => import('@/pages/Studio/StudioPage'))
 const BookingPage = lazy(() => import('@/pages/Booking/BookingPage'))
 const LoyaltyPage = lazy(() => import('@/pages/Loyalty/LoyaltyPage'))
