@@ -1,15 +1,15 @@
-import React, { useState } from 'react'
-import { motion } from 'framer-motion'
+import React, { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import Calendar from 'react-calendar'
 import { format, addDays, isBefore, startOfDay } from 'date-fns'
-import { Clock, Home, Scissors, Zap, AlertCircle, CheckCircle, ChevronRight, User, Phone } from 'lucide-react'
+import { Clock, Home, Scissors, Zap, AlertCircle, CheckCircle, ChevronRight, User, Phone, X } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser, useAuth as useClerkAuth } from '@clerk/clerk-react'
-import { createBooking, getAvailableSlots, generateTimeSlots } from '@/services/bookings'
-import { SERVICES, URGENT_FEE } from '@/types'
+import { createBooking, getAvailableSlots, generateTimeSlots, convertTo12Hour, blockTimeSlot, removeAvailableSlot } from '@/services/bookings'
+import { SERVICES, URGENT_FEE, Service } from '@/types'
 import toast from 'react-hot-toast'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -23,16 +23,17 @@ const bookingSchema = z.object({
 type BookingFormData = z.infer<typeof bookingSchema>
 
 // Slots are fetched from the service (includes admin-added slots and excludes booked times)
-import { useEffect } from 'react'
-
 const ALL_SLOTS: string[] = []
-
 const BookingPage: React.FC = () => {
   const { isLoaded: clerkLoaded, isSignedIn, user: clerkUser } = useUser()
   const { getToken } = useClerkAuth()
-  const { user: profileUser, loading: authLoading, getAuthenticatedClient, refetch: refetchAuth } = useAuth()
+  const { user: profileUser, loading: authLoading, isAdmin, getAuthenticatedClient, refetch: refetchAuth } = useAuth()
   const navigate = useNavigate()
+  const [selectedServices, setSelectedServices] = useState<Service[]>([])
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  
+  // Deletion state
+  const [slotToDelete, setSlotToDelete] = useState<string | null>(null)
   const [isUrgent, setIsUrgent] = useState(false)
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -61,7 +62,7 @@ const BookingPage: React.FC = () => {
   const urgentApplies = isToday
 
   const basePrice = serviceData
-    ? (bookingType === 'home' ? (serviceData.homePrice || serviceData.salonPrice * 2) : serviceData.salonPrice)
+    ? (bookingType === 'home' ? ((serviceData.homePrice || 0) || (serviceData.salonPrice || 0) * 2) : (serviceData.salonPrice || 0))
     : 0
   const totalPrice = basePrice + (isUrgent && urgentApplies ? URGENT_FEE : 0)
 
@@ -83,6 +84,46 @@ const BookingPage: React.FC = () => {
     }
     load()
   }, [selectedDate])
+
+  const confirmDeleteSlot = (slot: string) => {
+    setSlotToDelete(slot)
+  }
+
+  const handleDeleteSlot = async () => {
+    if (!slotToDelete) return
+    const slot = slotToDelete
+    setSlotToDelete(null)
+
+    const dateStr = format(selectedDate, 'yyyy-MM-dd')
+
+    // Optimistic UI update: remove from local state immediately
+    setAvailableSlots(prev => prev.filter(s => s !== slot))
+    if (watch('time') === slot) {
+      setValue('time', '')
+    }
+
+    try {
+      const authSupabase = await getAuthenticatedClient()
+      
+      // Perform both deletion from manual available slots and block default slots
+      await Promise.all([
+        removeAvailableSlot(dateStr, slot, authSupabase),
+        blockTimeSlot(dateStr, slot, clerkUser?.id || undefined, authSupabase)
+      ])
+
+      toast.success(`✅ تم حذف الوقت ${convertTo12Hour(slot)} بنجاح!`)
+    } catch (err: any) {
+      console.error("Failed to delete time slot:", err)
+      toast.error("فشل حذف الوقت من الخادم. يرجى إعادة المحاولة.")
+      // Rollback optimistic update by refetching
+      try {
+        const s = await getAvailableSlots(dateStr)
+        setAvailableSlots(s)
+      } catch (rollbackErr) {
+        console.error("Rollback failed:", rollbackErr)
+      }
+    }
+  }
 
   useEffect(() => {
     if (isSignedIn && clerkUser) {
@@ -366,7 +407,7 @@ const BookingPage: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">الوقت:</span>
-                <span className="text-white">{selectedTime}</span>
+                <span className="text-white">{convertTo12Hour(selectedTime)}</span>
               </div>
               <div className="flex justify-between border-t border-white/10 pt-3 mt-3">
                 <span className="text-gray-400">السعر الإجمالي:</span>
@@ -506,30 +547,53 @@ const BookingPage: React.FC = () => {
                   <span className="w-7 h-7 rounded-full gold-gradient text-black text-xs font-black flex items-center justify-center">2</span>
                   اختر الوقت
                 </h3>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 overflow-visible">
                   {slotsLoading ? (
                     <div className="col-span-full text-center text-gray-400 py-4">جاري تحميل الأوقات المتاحة...</div>
                   ) : availableSlots.length === 0 ? (
                     <div className="col-span-full text-center text-red-400 py-4 font-bold">لا توجد أوقات متاحة للحجز في هذا اليوم.</div>
                   ) : (
-                    availableSlots.map(slot => {
-                      const isSelected = selectedTime === slot
-                      return (
-                        <button
-                          key={slot}
-                          type="button"
-                          disabled={hasActiveBooking}
-                          onClick={() => setValue('time', slot)}
-                          className={`py-2 px-2 rounded-lg text-sm font-medium transition-all ${
-                            isSelected
-                              ? 'gold-gradient text-black font-bold'
-                              : 'glass text-gray-300 hover:text-yellow-400 hover:border-yellow-400/40'
-                          } ${hasActiveBooking ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        >
-                          {slot}
-                        </button>
-                      )
-                    })
+                    <AnimatePresence mode="popLayout">
+                      {availableSlots.map(slot => {
+                        const isSelected = selectedTime === slot
+                        return (
+                          <motion.div
+                            key={slot}
+                            layout
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            transition={{ duration: 0.2 }}
+                            className="relative group"
+                          >
+                            <button
+                              type="button"
+                              disabled={hasActiveBooking}
+                              onClick={() => setValue('time', slot)}
+                              className={`w-full py-2 px-2 rounded-lg text-sm font-medium transition-all ${
+                                isSelected
+                                  ? 'gold-gradient text-black font-bold'
+                                  : 'glass text-gray-300 hover:text-yellow-400 hover:border-yellow-400/40'
+                              } ${hasActiveBooking ? 'opacity-40 cursor-not-allowed' : ''}`}
+                            >
+                              {convertTo12Hour(slot)}
+                            </button>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  confirmDeleteSlot(slot)
+                                }}
+                                className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-lg transition-transform transform hover:scale-110 z-10 cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </motion.div>
+                        )
+                      })}
+                    </AnimatePresence>
                   )}
                 </div>
                 {errors.time && <p className="text-red-400 text-sm mt-2">{errors.time.message}</p>}
@@ -549,7 +613,7 @@ const BookingPage: React.FC = () => {
                 <div className="grid sm:grid-cols-2 gap-3">
                   {SERVICES.map(service => {
                     const isSelected = selectedService === service.name
-                    const price = bookingType === 'home' ? (service.homePrice || service.salonPrice * 2) : service.salonPrice
+                    const price = bookingType === 'home' ? ((service.homePrice || 0) || (service.salonPrice || 0) * 2) : (service.salonPrice || 0)
                     return (
                       <button
                         key={service.id}
@@ -699,7 +763,7 @@ const BookingPage: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">الوقت</span>
-                    <span className="text-white font-bold">{selectedTime || '-'}</span>
+                    <span className="text-white font-bold">{selectedTime ? convertTo12Hour(selectedTime) : '-'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">الخدمة</span>
@@ -747,6 +811,43 @@ const BookingPage: React.FC = () => {
           </div>
         </form>
       </div>
+
+      {/* Deletion Confirmation Modal */}
+      <AnimatePresence>
+        {slotToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="card max-w-md w-full p-6 border border-white/10 bg-neutral-900 space-y-6 text-right"
+            >
+              <div className="space-y-2">
+                <h3 className="text-white font-bold text-lg">تأكيد حذف الوقت</h3>
+                <p className="text-gray-400 text-sm">
+                  هل أنت متأكد من رغبتك في حذف الوقت <span className="text-yellow-400 font-bold">{convertTo12Hour(slotToDelete)}</span> ليوم {format(selectedDate, 'yyyy-MM-dd')}؟ لن يتمكن الزبائن من حجز هذا الوقت.
+                </p>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSlotToDelete(null)}
+                  className="px-4 py-2 rounded-lg bg-neutral-800 text-gray-300 text-sm font-semibold hover:bg-neutral-700 transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteSlot}
+                  className="px-5 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors shadow-lg shadow-red-600/20"
+                >
+                  حذف الموعد
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

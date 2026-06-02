@@ -5,7 +5,10 @@ import { useAuth } from '@/hooks/useAuth'
 import { Link, Navigate } from 'react-router-dom'
 import { POINTS_FOR_FREE } from '@/types'
 import { useQuery } from '@tanstack/react-query'
-import { getUserBookings, modifyBooking, getAvailableSlots } from '@/services/bookings'
+import { getUserBookings, modifyBooking, getAvailableSlots, convertTo12Hour } from '@/services/bookings'
+import { useSupabase } from '@/hooks/useSupabase'
+import { supabase as defaultSupabase } from '@/lib/supabase'
+import ErrorBoundary from '@/components/shared/ErrorBoundary'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -21,7 +24,8 @@ const StatusBadge = ({ status }: { status: string }) => {
 }
 
 const UserDashboardPage: React.FC = () => {
-  const { user, loading, getAuthenticatedClient, refetch } = useAuth()
+  const { user, loading, refetch } = useAuth()
+  const supabaseClient = useSupabase()
 
   const [activeTab, setActiveTab] = useState('bookings')
   
@@ -62,8 +66,7 @@ const UserDashboardPage: React.FC = () => {
     if (!selectedBookingToEdit || !editDate || !editTime) return
     setIsSavingEdit(true)
     try {
-      const authSupabase = await getAuthenticatedClient()
-      await modifyBooking(selectedBookingToEdit.id, { date: editDate, time: editTime }, authSupabase)
+      await modifyBooking(selectedBookingToEdit.id, { date: editDate, time: editTime }, supabaseClient)
       toast.success('✅ تم تعديل موعد الحجز بنجاح!')
       setSelectedBookingToEdit(null)
       refetchAppointments()
@@ -92,10 +95,9 @@ const UserDashboardPage: React.FC = () => {
 
   // Customer-specific queries from bookings table directly
   const { data: customerAppointments = [], isLoading: customerAppointmentsLoading, refetch: refetchAppointments } = useQuery({
-    queryKey: ['customer-appointments', user?.id],
+    queryKey: ['customer-appointments', user?.id, supabaseClient !== defaultSupabase],
     queryFn: async () => {
-      const authSupabase = await getAuthenticatedClient()
-      const { data, error } = await authSupabase
+      const { data, error } = await supabaseClient
         .from('bookings')
         .select('*')
         .eq('user_id', user?.id)
@@ -103,16 +105,16 @@ const UserDashboardPage: React.FC = () => {
       if (error) throw error
       return data || []
     },
-    enabled: !!user,
+    enabled: !loading && !!user?.id && !!supabaseClient,
   })
 
-  const displayBookings = customerAppointments.map((appt: any) => ({
+  const displayBookings = (customerAppointments || []).map((appt: any) => ({
     id: appt.id,
     service_name: appt.service_name || 'جلسة عناية بالصالون',
-    date: appt.date,
-    time: appt.time.slice(0, 5),
+    date: appt.date || '',
+    time: (typeof appt.time === 'string' && appt.time) ? appt.time.slice(0, 5) : '',
     booking_type: appt.booking_type || 'salon',
-    status: appt.status,
+    status: appt.status || 'pending',
     total_price: appt.total_price || appt.service_price || 15,
     modified_count: appt.modified_count ?? 0,
   }))
@@ -134,8 +136,7 @@ const UserDashboardPage: React.FC = () => {
 
     setIsSavingPhone(true)
     try {
-      const authSupabase = await getAuthenticatedClient()
-      const { error } = await authSupabase
+      const { error } = await supabaseClient
         .from('profiles')
         .update({ phone: cleanPhone })
         .eq('id', user?.id)
@@ -164,8 +165,7 @@ const UserDashboardPage: React.FC = () => {
 
     setIsSavingProfile(true)
     try {
-      const authSupabase = await getAuthenticatedClient()
-      const { error } = await authSupabase
+      const { error } = await supabaseClient
         .from('profiles')
         .update({
           full_name: profileName,
@@ -184,9 +184,12 @@ const UserDashboardPage: React.FC = () => {
     }
   }
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="loader w-12 h-12"></div>
+  if (loading || customerAppointmentsLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-black">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 rounded-full border-2 border-yellow-400/20 border-t-yellow-400 animate-spin"></div>
+        <p className="text-gray-400 text-sm font-medium">جاري تحميل البيانات...</p>
+      </div>
     </div>
   )
   if (!user) return <Navigate to="/login" />
@@ -331,7 +334,7 @@ const UserDashboardPage: React.FC = () => {
                         المواعيد القادمة
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {upcoming.map((b: any, index: number) => (
+                        {(upcoming || []).map((b: any, index: number) => (
                           <motion.div
                             key={b.id}
                             initial={{ opacity: 0, y: 15 }}
@@ -348,8 +351,8 @@ const UserDashboardPage: React.FC = () => {
                             </div>
                              <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
                               <div className="text-gray-300 text-sm flex flex-col gap-1">
-                                <span className="flex items-center gap-1.5">📅 {b.date}</span>
-                                <span className="flex items-center gap-1.5">⏰ {b.time}</span>
+                                <span className="flex items-center gap-1.5">📅 {b.date || 'غير محدد'}</span>
+                                <span className="flex items-center gap-1.5">⏰ {b.time ? convertTo12Hour(b.time) : 'غير محدد'}</span>
                               </div>
                               <div className="text-left flex flex-col items-end gap-2">
                                 <p className="text-yellow-400 font-black text-xl">{b.total_price} د.أ</p>
@@ -386,7 +389,7 @@ const UserDashboardPage: React.FC = () => {
                         الحجوزات السابقة والملغاة
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-75">
-                        {past.map((b: any, index: number) => (
+                        {(past || []).map((b: any, index: number) => (
                           <motion.div
                             key={b.id}
                             initial={{ opacity: 0, y: 10 }}
@@ -400,8 +403,8 @@ const UserDashboardPage: React.FC = () => {
                             </div>
                             <div className="flex justify-between items-center pt-4 border-t border-white/5 mt-auto">
                               <div className="text-gray-400 text-sm flex flex-col gap-1">
-                                <span>📅 {b.date}</span>
-                                <span>⏰ {b.time}</span>
+                                <span>📅 {b.date || 'غير محدد'}</span>
+                                <span>⏰ {b.time ? convertTo12Hour(b.time) : 'غير محدد'}</span>
                               </div>
                               <p className="text-gray-400 font-bold text-lg">{b.total_price} د.أ</p>
                             </div>
@@ -588,7 +591,7 @@ const UserDashboardPage: React.FC = () => {
                               : 'glass text-gray-300 hover:text-yellow-400'
                           }`}
                         >
-                          {slot}
+                          {convertTo12Hour(slot)}
                         </button>
                       )
                     })
@@ -627,4 +630,32 @@ const UserDashboardPage: React.FC = () => {
   )
 }
 
-export default UserDashboardPage
+const UserDashboardPageWithErrorBoundary: React.FC = () => {
+  const customFallback = (
+    <div className="min-h-screen py-12 px-4 bg-gradient-to-b from-black to-neutral-900 flex items-center justify-center">
+      <div className="min-h-[400px] flex flex-col items-center justify-center text-center p-6 glass rounded-2xl border border-red-500/20 max-w-xl w-full mx-auto my-8">
+        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mb-4 border border-red-500/20 text-3xl">
+          ⚠️
+        </div>
+        <h3 className="text-white font-bold text-lg mb-2">حصل خطأ أثناء تحميل الحجوزات</h3>
+        <p className="text-gray-400 text-sm mb-6 leading-relaxed font-sans">
+          يرجى المحاولة لاحقاً أو التواصل مع الدعم الفني لصالون الحوّاري.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-2.5 bg-yellow-400 hover:bg-yellow-500 text-black rounded-xl font-bold text-sm transition-all"
+        >
+          إعادة تحميل الصفحة
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <ErrorBoundary fallback={customFallback}>
+      <UserDashboardPage />
+    </ErrorBoundary>
+  )
+}
+
+export default UserDashboardPageWithErrorBoundary

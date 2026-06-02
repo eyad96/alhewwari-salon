@@ -253,7 +253,7 @@ const WorkingHoursSection: React.FC = () => {
 
   const features = [
     { icon: '⏰', title: 'ساعات العمل', desc: '12:00 ظهراً - 2:00 صباحاً' },
-    { icon: '📍', title: 'الموقع', desc: 'عمّان، الأردن' },
+    { icon: '📍', title: 'الموقع', desc: 'عوجان - بجانب مطعم HotGrill' },
     { icon: '🏠', title: 'حجز منزلي', desc: 'نصل إليك في أي مكان' },
     { icon: '⚡', title: 'حجز فوري', desc: 'نفس اليوم بإضافة 5 دنانير' },
   ]

@@ -71,7 +71,7 @@ const ContactPage: React.FC = () => {
               {[
                 { icon: <Phone className="w-5 h-5" />, title: 'واتساب', value: '0787146476', href: `https://wa.me/${WHATSAPP_NUMBER}` },
                 { icon: <Mail className="w-5 h-5" />, title: 'البريد الإلكتروني', value: 'info@alhewwari.com', href: 'mailto:info@alhewwari.com' },
-                { icon: <MapPin className="w-5 h-5" />, title: 'الموقع', value: 'الأردن , الرصيفة , عوجان الجبل', href: '#map' },
+                { icon: <MapPin className="w-5 h-5" />, title: 'الموقع', value: 'عوجان - بجانب مطعم HotGrill', href: '#map' },
                 { icon: <Clock className="w-5 h-5" />, title: 'ساعات العمل', value: WORKING_HOURS.label, href: undefined },
               ].map(info => (
                 <div key={info.title} className="flex items-start gap-4">

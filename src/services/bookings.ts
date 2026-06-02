@@ -1,5 +1,5 @@
 import { supabase as defaultSupabase } from '@/lib/supabase'
-import type { Booking } from '@/types'
+import type { Booking, Service } from '@/types'
 import { addMinutes, format, parse, isAfter, isBefore, startOfDay, endOfDay } from 'date-fns'
 import { bookingSchema } from '@/lib/schemas'
 
@@ -32,9 +32,10 @@ export const generateTimeSlots = (): string[] => {
 export const getAvailableSlots = async (date: string, supabase = defaultSupabase): Promise<string[]> => {
   let bookedTimes: string[] = []
   let manualTimes: string[] = []
+  let blockedTimes: string[] = []
 
   try {
-    const [bookingsRes, manualRes] = await Promise.all([
+    const [bookingsRes, manualRes, blockedRes] = await Promise.all([
       supabase
         .from('bookings')
         .select('time, status')
@@ -42,6 +43,10 @@ export const getAvailableSlots = async (date: string, supabase = defaultSupabase
         .in('status', ['pending', 'confirmed']),
       supabase
         .from('available_slots')
+        .select('time')
+        .eq('date', date),
+      supabase
+        .from('blocked_slots')
         .select('time')
         .eq('date', date)
     ])
@@ -57,17 +62,23 @@ export const getAvailableSlots = async (date: string, supabase = defaultSupabase
     } else if (manualRes.error) {
       console.warn("⚠️ available_slots table query error:", manualRes.error.message)
     }
+
+    if (!blockedRes.error && blockedRes.data && blockedRes.data.length > 0) {
+      blockedTimes = blockedRes.data.map((b: any) => b.time.slice(0, 5))
+    } else if (blockedRes.error) {
+      console.warn("⚠️ blocked_slots table query error:", blockedRes.error.message)
+    }
   } catch (err: any) {
-    console.warn("⚠️ Could not query bookings or available_slots table:", err.message)
+    console.warn("⚠️ Could not query bookings, available_slots, or blocked_slots table:", err.message)
   }
 
   // Combine default working hours slots with manually added available slots
   const defaultSlots = generateTimeSlots()
   const baseSlots = Array.from(new Set([...defaultSlots, ...manualTimes]))
 
-  // Filter out booked slots and sort them alphabetically/chronologically
+  // Filter out booked slots and blocked slots, and sort them alphabetically/chronologically
   return baseSlots
-    .filter((slot) => !bookedTimes.includes(slot))
+    .filter((slot) => !bookedTimes.includes(slot) && !blockedTimes.includes(slot))
     .sort((a, b) => a.localeCompare(b))
 }
 
@@ -77,6 +88,17 @@ export const getAvailableSlots = async (date: string, supabase = defaultSupabase
 // ==============================
 
 export const addAvailableSlot = async (date: string, time: string, createdBy?: string, supabase = defaultSupabase) => {
+  // First ensure any existing block is removed
+  try {
+    await supabase
+      .from('blocked_slots')
+      .delete()
+      .eq('date', date)
+      .eq('time', time)
+  } catch (err: any) {
+    console.warn("⚠️ Failed to unblock slot on addition:", err.message)
+  }
+
   const { data, error } = await supabase
     .from('available_slots')
     .insert({ date, time, created_by: createdBy || null })
@@ -99,6 +121,37 @@ export const removeAvailableSlot = async (date: string, time: string, supabase =
 
 export const getManualSlots = async (date: string, supabase = defaultSupabase) => {
   const { data, error } = await supabase.from('available_slots').select('*').eq('date', date).order('time', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+// ==============================
+// إدارة الأوقات المحظورة (أدمن)
+// ==============================
+
+export const blockTimeSlot = async (date: string, time: string, createdBy?: string, supabase = defaultSupabase) => {
+  const { data, error } = await supabase
+    .from('blocked_slots')
+    .insert({ date, time, created_by: createdBy || null })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export const unblockTimeSlot = async (date: string, time: string, supabase = defaultSupabase) => {
+  const { error } = await supabase
+    .from('blocked_slots')
+    .delete()
+    .eq('date', date)
+    .eq('time', time)
+
+  if (error) throw error
+}
+
+export const getBlockedSlots = async (date: string, supabase = defaultSupabase) => {
+  const { data, error } = await supabase.from('blocked_slots').select('*').eq('date', date).order('time', { ascending: true })
   if (error) throw error
   return data || []
 }
@@ -156,6 +209,7 @@ export interface CreateBookingData {
   time: string
   is_urgent: boolean
   notes?: string
+  selected_services?: any[]
 }
 
 export const createBooking = async (data: CreateBookingData, supabase = defaultSupabase): Promise<Booking> => {
@@ -224,6 +278,7 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
     total_price,
     notes: data.notes || '',
     modified_count: 0,
+    selected_services: data.selected_services || []
   }
 
   console.log("📤 [Supabase Insert] Payload being sent to public.bookings:", insertPayload)
@@ -469,5 +524,109 @@ export const deleteBooking = async (bookingId: string, supabase = defaultSupabas
     .eq('id', bookingId)
 
   if (error) throw error
+}
+
+// ==============================
+// إدارة الخدمات (أدمن وقراءتها زبون)
+// ==============================
+
+export const getServices = async (supabase = defaultSupabase): Promise<Service[]> => {
+  const { data, error } = await supabase
+    .from('services')
+    .select('*')
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error("⚠️ Error fetching services:", error.message)
+    throw error
+  }
+
+  return (data || []).map((s: any) => ({
+    id: s.id,
+    name: s.name,
+    icon: s.icon || '✂️',
+    salonPrice: s.salon_price !== null ? Number(s.salon_price) : null,
+    homePrice: s.home_price !== null ? Number(s.home_price) : null,
+    duration: s.duration || 30,
+    description: s.description || '',
+    is_custom: s.is_custom || false,
+  }))
+}
+
+export const addService = async (
+  service: Omit<Service, 'id'>,
+  supabase = defaultSupabase
+): Promise<Service> => {
+  const { data, error } = await supabase
+    .from('services')
+    .insert({
+      name: service.name,
+      english_name: service.name, // default english name to name
+      icon: service.icon || '✂️',
+      salon_price: service.salonPrice,
+      home_price: service.homePrice,
+      duration: service.duration || 30,
+      description: service.description || '',
+      is_custom: true
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error("⚠️ Error adding service:", error.message)
+    throw error
+  }
+
+  return {
+    id: data.id,
+    name: data.name,
+    icon: data.icon || '✂️',
+    salonPrice: data.salon_price !== null ? Number(data.salon_price) : null,
+    homePrice: data.home_price !== null ? Number(data.home_price) : null,
+    duration: data.duration || 30,
+    description: data.description || '',
+    is_custom: data.is_custom || false,
+  }
+}
+
+// ==============================
+// تحويل صيغة الوقت (12 ساعة / 24 ساعة)
+// ==============================
+
+export const convertTo12Hour = (time24: string | null | undefined): string => {
+  if (typeof time24 !== 'string' || !time24) return ''
+  const parts = time24.split(':')
+  if (parts.length < 2) return time24
+  
+  const hour24 = parseInt(parts[0], 10)
+  if (isNaN(hour24)) return time24
+  const minStr = parts[1]
+  const period = hour24 >= 12 ? 'PM' : 'AM'
+  
+  let hour12 = hour24 % 12
+  if (hour12 === 0) hour12 = 12
+  
+  return `${hour12}:${minStr.slice(0, 2)} ${period}`
+}
+
+export const convertTo24Hour = (time12: string | null | undefined): string => {
+  if (typeof time12 !== 'string' || !time12) return ''
+  const parts = time12.split(' ')
+  if (parts.length < 2) return time12
+  
+  const timePart = parts[0]
+  const period = parts[1].toUpperCase()
+  
+  const timeSubparts = timePart.split(':')
+  if (timeSubparts.length < 2) return time12
+  
+  let hour = parseInt(timeSubparts[0], 10)
+  if (isNaN(hour)) return time12
+  const minute = timeSubparts[1]
+  
+  if (period === 'PM' && hour < 12) hour += 12
+  if (period === 'AM' && hour === 12) hour = 0
+  
+  return `${String(hour).padStart(2, '0')}:${minute.slice(0, 2)}`
 }
 

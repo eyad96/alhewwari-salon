@@ -21,11 +21,11 @@ const Header: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  
+
   const { user: profileUser, isAdmin: authIsAdmin } = useAuth()
   const { isSignedIn, user } = useUser()
   const isAdmin = !!(isSignedIn && authIsAdmin)
-  
+
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -62,15 +62,14 @@ const Header: React.FC = () => {
     <motion.header
       initial={{ y: -100 }}
       animate={{ y: 0 }}
-      className={`fixed top-0 right-0 left-0 z-50 transition-all duration-500 ${
-        scrolled
-          ? 'glass-dark shadow-lg'
-          : 'bg-transparent'
-      }`}
+      className={`fixed top-0 right-0 left-0 z-50 transition-all duration-500 ${scrolled
+        ? 'glass-dark shadow-lg'
+        : 'bg-transparent'
+        }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20">
-          
+
           {/* لوغو */}
           <Link to="/" className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-full gold-gradient flex items-center justify-center animate-pulse-gold">
@@ -88,11 +87,10 @@ const Header: React.FC = () => {
               <Link
                 key={link.path}
                 to={link.path}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  location.pathname === link.path
-                    ? 'text-yellow-400 bg-yellow-400/10'
-                    : 'text-gray-300 hover:text-yellow-400 hover:bg-white/5'
-                }`}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${location.pathname === link.path
+                  ? 'text-yellow-400 bg-yellow-400/10'
+                  : 'text-gray-300 hover:text-yellow-400 hover:bg-white/5'
+                  }`}
               >
                 {link.label}
               </Link>
@@ -129,6 +127,13 @@ const Header: React.FC = () => {
                   </div>
                 )}
                 <UserButton afterSignOutUrl="/" />
+                <button
+                  onClick={handleSignOut}
+                  className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
+                  title="تسجيل الخروج"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
               </div>
             </SignedIn>
             <SignedOut>
@@ -167,11 +172,10 @@ const Header: React.FC = () => {
                 <Link
                   key={link.path}
                   to={link.path}
-                  className={`block px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                    location.pathname === link.path
-                      ? 'text-yellow-400 bg-yellow-400/10'
-                      : 'text-gray-300 hover:text-yellow-400 hover:bg-white/5'
-                  }`}
+                  className={`block px-4 py-3 rounded-lg text-sm font-medium transition-all ${location.pathname === link.path
+                    ? 'text-yellow-400 bg-yellow-400/10'
+                    : 'text-gray-300 hover:text-yellow-400 hover:bg-white/5'
+                    }`}
                 >
                   {link.label}
                 </Link>
@@ -186,8 +190,8 @@ const Header: React.FC = () => {
                 <div className="pt-4 border-t border-white/10 flex flex-col gap-3 px-2">
                   {isAdmin ? (
                     <div className="flex items-center justify-between w-full">
-                      <Link 
-                        to="/admin" 
+                      <Link
+                        to="/admin"
                         className="btn-outline-gold text-xs py-2 px-4 flex items-center gap-2"
                       >
                         <LayoutDashboard className="w-4 h-4" />
@@ -203,8 +207,8 @@ const Header: React.FC = () => {
                         </span>
                         <UserButton afterSignOutUrl="/" />
                       </div>
-                      <Link 
-                        to="/user-dashboard" 
+                      <Link
+                        to="/user-dashboard"
                         className="btn-gold text-xs py-2 px-4 flex items-center justify-center gap-2 w-full text-center"
                       >
                         <LayoutDashboard className="w-4 h-4" />
@@ -212,6 +216,13 @@ const Header: React.FC = () => {
                       </Link>
                     </div>
                   )}
+                  <button
+                    onClick={handleSignOut}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-bold border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400 rounded-lg transition-all mt-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    تسجيل الخروج
+                  </button>
                 </div>
               </SignedIn>
             </nav>

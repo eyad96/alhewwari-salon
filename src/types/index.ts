@@ -28,6 +28,7 @@ export interface Booking {
   modified_count: number
   created_at: string
   user?: Pick<User, 'full_name' | 'phone' | 'email'>
+  selected_services?: any[]
 }
 
 export interface Product {
@@ -110,21 +111,23 @@ export interface Service {
   id: string
   name: string
   icon: string
-  salonPrice: number
-  homePrice: number
+  salonPrice: number | null
+  homePrice: number | null
   duration: number
   description?: string
+  is_custom?: boolean
 }
 
 export const SERVICES: Service[] = [
-  { id: 'haircut', name: 'قص الشعر', icon: '✂️', salonPrice: 3, homePrice: 7, duration: 30 },
-  { id: 'beard', name: 'حلاقة الذقن', icon: '🪒', salonPrice: 2, homePrice: 5, duration: 20 },
-  { id: 'haircut-beard', name: 'قص + ذقن', icon: '💈', salonPrice: 4, homePrice: 9, duration: 45 },
-  { id: 'kids', name: 'قص أطفال', icon: '👦', salonPrice: 2, homePrice: 5, duration: 20 },
-  { id: 'keratin', name: 'كيراتين', icon: '✨', salonPrice: 10, homePrice: 15, duration: 90 },
-  { id: 'color', name: 'صبغة الشعر', icon: '🎨', salonPrice: 8, homePrice: 12, duration: 60 },
-  { id: 'skin', name: 'تنظيف البشرة', icon: '🌿', salonPrice: 6, homePrice: 10, duration: 45 },
-  { id: 'wax', name: 'إزالة الشعر بالشمع', icon: '🕯️', salonPrice: 4, homePrice: 7, duration: 30 },
+  { id: 'haircut', name: 'حلاقة شعر', icon: '✂️', salonPrice: 5, homePrice: 10, duration: 30 },
+  { id: 'beard', name: 'حلاقة ذقن', icon: '🪒', salonPrice: 2, homePrice: 5, duration: 20 },
+  { id: 'haircut-beard', name: 'حلاقة شعر وذقن', icon: '💈', salonPrice: 7, homePrice: 15, duration: 45 },
+  { id: 'skin', name: 'تنظيف بشرة', icon: '🌿', salonPrice: 10, homePrice: null, duration: 45 },
+  { id: 'keratin', name: 'كرياتين او بروتين', icon: '✨', salonPrice: 15, homePrice: 25, duration: 90 },
+  { id: 'blowdry', name: 'سشوار', icon: '💨', salonPrice: 2, homePrice: 5, duration: 15 },
+  { id: 'wax', name: 'شمع', icon: '🕯️', salonPrice: 2, homePrice: 5, duration: 20 },
+  { id: 'curly', name: 'كيرلي+حلاقة', icon: '🌀', salonPrice: 5, homePrice: 10, duration: 30 },
+  { id: 'groom', name: 'عرض العريس', icon: '👑', salonPrice: 30, homePrice: null, duration: 120, description: 'Includes (Skincare + Legendary Haircut + Blowdry) at the groom\'s house before the party' },
 ]
 
 // ==============================

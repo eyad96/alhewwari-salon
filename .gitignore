@@ -42,3 +42,9 @@ Thumbs.db
 # Local developer backups and skill guides
 /skill.md
 /database_scripts/
+
+# Agent files and temporary markdown files
+.agents/
+/graphify-out/
+**/*.md
+!README.md
