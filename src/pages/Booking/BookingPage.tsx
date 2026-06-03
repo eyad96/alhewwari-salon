@@ -8,10 +8,12 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser, useAuth as useClerkAuth } from '@clerk/clerk-react'
-import { createBooking, getAvailableSlots, generateTimeSlots, convertTo12Hour, blockTimeSlot, removeAvailableSlot } from '@/services/bookings'
+import { createBooking, getAvailableSlots, generateTimeSlots, convertTo12Hour, blockTimeSlot, removeAvailableSlot, getServices } from '@/services/bookings'
 import { SERVICES, URGENT_FEE, Service, BARBERS } from '@/types'
 import toast from 'react-hot-toast'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { ServiceIcon } from '@/components/shared/ServiceIcon'
 
 const bookingSchema = z.object({
   service_name: z.string().min(1, 'اختر خدمة'),
@@ -58,7 +60,12 @@ const BookingPage: React.FC = () => {
   const bookingType = watch('booking_type')
   const selectedBarber = watch('barber_name')
 
-  const serviceData = SERVICES.find(s => s.name === selectedService)
+  const { data: services = SERVICES } = useQuery({
+    queryKey: ['services'],
+    queryFn: () => getServices(),
+  })
+
+  const serviceData = services.find(s => s.name === selectedService)
   const today = startOfDay(new Date())
   const isToday = format(selectedDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')
   const urgentApplies = isToday
@@ -620,7 +627,7 @@ const BookingPage: React.FC = () => {
                   اختر الخدمة
                 </h3>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  {SERVICES.map(service => {
+                  {services.map(service => {
                     const isSelected = selectedService === service.name
                     const price = bookingType === 'home' ? ((service.homePrice || 0) || (service.salonPrice || 0) * 2) : (service.salonPrice || 0)
                     return (
@@ -637,7 +644,7 @@ const BookingPage: React.FC = () => {
                           <span className={`text-xl font-black ${isSelected ? 'text-yellow-400' : 'text-gray-300'}`}>
                             {price} د.أ
                           </span>
-                          <span className="text-xl">{service.id === '1' ? '✂️' : service.id === '2' ? '🪒' : '💈'}</span>
+                          <ServiceIcon icon={service.icon} className="w-5 h-5" />
                         </div>
                         <p className={`font-bold mt-1 ${isSelected ? 'text-white' : 'text-gray-300'}`}>
                           {service.name}

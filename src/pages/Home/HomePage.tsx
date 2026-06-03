@@ -4,6 +4,9 @@ import { motion, useInView } from 'framer-motion'
 import { ChevronDown, Scissors, Star, Clock, MapPin, Award } from 'lucide-react'
 import { SERVICES, WORKING_HOURS, WHATSAPP_NUMBER } from '@/types'
 import { SignedOut } from '@clerk/clerk-react'
+import { useQuery } from '@tanstack/react-query'
+import { getServices } from '@/services/bookings'
+import { ServiceIcon } from '@/components/shared/ServiceIcon'
 
 // ============ Hero Section ============
 const HeroSection: React.FC = () => {
@@ -122,6 +125,11 @@ const ServicesSection: React.FC = () => {
   const ref = useRef(null)
   const inView = useInView(ref, { once: true, margin: '-100px' })
 
+  const { data: services = SERVICES } = useQuery({
+    queryKey: ['services'],
+    queryFn: () => getServices(),
+  })
+
   return (
     <section ref={ref} className="py-24 px-4 max-w-7xl mx-auto">
       <motion.div
@@ -141,7 +149,7 @@ const ServicesSection: React.FC = () => {
       </motion.div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {SERVICES.map((service, index) => (
+        {services.map((service, index) => (
           <motion.div
             key={service.id}
             initial={{ opacity: 0, y: 40 }}
@@ -149,7 +157,9 @@ const ServicesSection: React.FC = () => {
             transition={{ duration: 0.5, delay: index * 0.1 }}
             className="card p-6 group"
           >
-            <div className="text-4xl mb-4">{service.icon}</div>
+            <div className="mb-4">
+              <ServiceIcon icon={service.icon} className="w-10 h-10" />
+            </div>
             <h3 className="text-white font-bold text-lg mb-2 group-hover:text-yellow-400 transition-colors">
               {service.name}
             </h3>

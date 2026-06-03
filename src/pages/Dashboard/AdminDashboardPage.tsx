@@ -20,10 +20,12 @@ import {
   deleteBooking,
   getServices,
   addService,
+  deleteService,
   convertTo12Hour,
 } from '@/services/bookings'
 import ImageUpload from '@/components/shared/ImageUpload'
 import toast from 'react-hot-toast'
+import { ServiceIcon } from '@/components/shared/ServiceIcon'
 
 const StatusBadge = ({ status }: { status: string }) => {
   const map: Record<string, { label: string; cls: string }> = {
@@ -404,14 +406,69 @@ const AdminDashboardPage: React.FC = () => {
     },
     onSuccess: () => {
       refetchServices()
-      toast.success('✅ تم حفظ الخدمة المضافة مباشرة في قاعدة البيانات!')
+      queryClient.invalidateQueries({ queryKey: ['services'] })
+      toast.success('تم إضافة الخدمة بنجاح.')
       setNewServiceName('')
       setNewServiceSalonPrice('')
       setNewServiceHomePrice('')
       setNewServiceDesc('')
+      setNewServiceIcon('✂️')
+      setNewServiceDuration(30)
     },
     onError: (err: any) => {
       toast.error('❌ فشل إضافة الخدمة: ' + err.message)
+    }
+  })
+
+  // Dynamic Service Deletion Mutation
+  const deleteServiceMutation = useMutation({
+    mutationFn: async (serviceId: string) => {
+      const authSupabase = await getAuthenticatedClient()
+      return deleteService(serviceId, authSupabase)
+    },
+    onMutate: async (deletedId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['admin-services'] })
+      await queryClient.cancelQueries({ queryKey: ['services'] })
+
+      // Snapshot the previous values
+      const previousAdminServices = queryClient.getQueryData<Service[]>(['admin-services'])
+      const previousServices = queryClient.getQueryData<Service[]>(['services'])
+
+      // Optimistically update admin-services
+      if (previousAdminServices) {
+        queryClient.setQueryData<Service[]>(
+          ['admin-services'],
+          previousAdminServices.filter((s) => s.id !== deletedId)
+        )
+      }
+
+      // Optimistically update services
+      if (previousServices) {
+        queryClient.setQueryData<Service[]>(
+          ['services'],
+          previousServices.filter((s) => s.id !== deletedId)
+        )
+      }
+
+      // Return a context object with the snapshotted values
+      return { previousAdminServices, previousServices }
+    },
+    onError: (err: any, deletedId, context) => {
+      if (context?.previousAdminServices) {
+        queryClient.setQueryData(['admin-services'], context.previousAdminServices)
+      }
+      if (context?.previousServices) {
+        queryClient.setQueryData(['services'], context.previousServices)
+      }
+      toast.error('❌ فشل حذف الخدمة: ' + err.message)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['services'] })
+      toast.success('تم حذف الخدمة بنجاح.')
+    },
+    onSettled: () => {
+      refetchServices()
     }
   })
 
@@ -1034,8 +1091,8 @@ const AdminDashboardPage: React.FC = () => {
                             key={service.id}
                             className="p-4 rounded-xl bg-neutral-900/60 border border-white/5 flex items-start gap-3 justify-between"
                           >
-                            <div className="text-2xl p-2.5 bg-black/40 rounded-lg border border-white/5 shrink-0">
-                              {service.icon}
+                            <div className="p-2.5 bg-black/40 rounded-lg border border-white/5 shrink-0">
+                              <ServiceIcon icon={service.icon} className="w-8 h-8" />
                             </div>
                             <div className="flex-1 text-right space-y-1">
                               <h4 className="font-bold text-white text-sm">{service.name}</h4>
@@ -1046,6 +1103,21 @@ const AdminDashboardPage: React.FC = () => {
                                 <span className="text-gray-400">منزلي: <strong className="text-yellow-400">{service.homePrice !== null ? `${service.homePrice} د.أ` : 'N/A'}</strong></span>
                               </div>
                             </div>
+
+                            {user?.role === 'admin' && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm('هل أنت متأكد من حذف هذه الخدمة؟')) {
+                                    deleteServiceMutation.mutate(service.id)
+                                  }
+                                }}
+                                disabled={deleteServiceMutation.isPending}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors duration-200 shrink-0 self-center disabled:opacity-50"
+                                title="حذف الخدمة"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>

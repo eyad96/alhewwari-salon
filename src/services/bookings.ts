@@ -601,6 +601,21 @@ export const addService = async (
   }
 }
 
+export const deleteService = async (
+  serviceId: string,
+  supabase = defaultSupabase
+): Promise<void> => {
+  const { error } = await supabase
+    .from('services')
+    .delete()
+    .eq('id', serviceId)
+
+  if (error) {
+    console.error("⚠️ Error deleting service:", error.message)
+    throw error
+  }
+}
+
 // ==============================
 // تحويل صيغة الوقت (12 ساعة / 24 ساعة)
 // ==============================
