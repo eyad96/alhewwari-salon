@@ -123,6 +123,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 full_name: fullName,
                 email: clerkUser.primaryEmailAddress?.emailAddress || '',
                 role: clerkRole || 'customer',
+                avatar_url: clerkUser.imageUrl || null,
               })
             } catch (insertErr: any) {
               console.warn("⚠️ profiles insert failed on authenticated client, retrying with standard client:", insertErr.message)
@@ -132,6 +133,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   full_name: fullName,
                   email: clerkUser.primaryEmailAddress?.emailAddress || '',
                   role: clerkRole || 'customer',
+                  avatar_url: clerkUser.imageUrl || null,
                 })
               } catch (fallbackInsertErr: any) {
                 console.error("❌ Failed to sync profile to database:", fallbackInsertErr.message)
@@ -157,15 +159,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               }
             }
           } else {
-            // if Clerk has a role and it differs from Supabase, sync it
-            if (clerkRole && existing.role !== clerkRole) {
+            const hasRoleMismatch = clerkRole && existing.role !== clerkRole
+            const hasAvatarMismatch = clerkUser.imageUrl && existing.avatar_url !== clerkUser.imageUrl
+
+            if (hasRoleMismatch || hasAvatarMismatch) {
+              const updates: Record<string, any> = {}
+              if (hasRoleMismatch) updates.role = clerkRole
+              if (hasAvatarMismatch) updates.avatar_url = clerkUser.imageUrl
+
               try {
-                await authSupabase.from('profiles').update({ role: clerkRole }).eq('id', clerkUser.id)
+                await authSupabase.from('profiles').update(updates).eq('id', clerkUser.id)
               } catch (updateErr: any) {
                 try {
-                  await supabase.from('profiles').update({ role: clerkRole }).eq('id', clerkUser.id)
+                  await supabase.from('profiles').update(updates).eq('id', clerkUser.id)
                 } catch (fallbackUpdateErr: any) {
-                  console.warn("⚠️ Failed to update profile role sync:", fallbackUpdateErr.message)
+                  console.warn("⚠️ Failed to update profile sync:", fallbackUpdateErr.message)
                 }
               }
             }

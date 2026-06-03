@@ -29,6 +29,7 @@ export interface Booking {
   created_at: string
   user?: Pick<User, 'full_name' | 'phone' | 'email'>
   selected_services?: any[]
+  barber_name?: string
 }
 
 export interface Product {
@@ -148,3 +149,15 @@ export const POINTS_PER_HAIRCUT = 20
 export const POINTS_FOR_FREE = 100 // نقاط للحلاقة المجانية
 export const CANCEL_WINDOW_MINUTES = 30 // نافذة الإلغاء بالدقائق
 export const MAX_BOOKING_MODIFICATIONS = 1 // عدد التعديلات المسموحة
+
+// ==============================
+// قائمة الحلاقين (Barbers List)
+// ==============================
+export const BARBERS = [
+  'عبدالله الحواري',
+  'حمزة الحواري',
+  'ادهم',
+  'مصطفى',
+  'محمود',
+  'زيد'
+]

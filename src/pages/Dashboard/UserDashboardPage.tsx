@@ -117,6 +117,7 @@ const UserDashboardPage: React.FC = () => {
     status: appt.status || 'pending',
     total_price: appt.total_price || appt.service_price || 15,
     modified_count: appt.modified_count ?? 0,
+    barber_name: appt.barber_name || '',
   }))
 
   const upcoming = displayBookings.filter((b: any) => b.status === 'pending' || b.status === 'confirmed')
@@ -353,6 +354,7 @@ const UserDashboardPage: React.FC = () => {
                               <div className="text-gray-300 text-sm flex flex-col gap-1">
                                 <span className="flex items-center gap-1.5">📅 {b.date || 'غير محدد'}</span>
                                 <span className="flex items-center gap-1.5">⏰ {b.time ? convertTo12Hour(b.time) : 'غير محدد'}</span>
+                                {b.barber_name && <span className="flex items-center gap-1.5">💈 الحلاق: {b.barber_name}</span>}
                               </div>
                               <div className="text-left flex flex-col items-end gap-2">
                                 <p className="text-yellow-400 font-black text-xl">{b.total_price} د.أ</p>
@@ -405,6 +407,7 @@ const UserDashboardPage: React.FC = () => {
                               <div className="text-gray-400 text-sm flex flex-col gap-1">
                                 <span>📅 {b.date || 'غير محدد'}</span>
                                 <span>⏰ {b.time ? convertTo12Hour(b.time) : 'غير محدد'}</span>
+                                {b.barber_name && <span>💈 الحلاق: {b.barber_name}</span>}
                               </div>
                               <p className="text-gray-400 font-bold text-lg">{b.total_price} د.أ</p>
                             </div>

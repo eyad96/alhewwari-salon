@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser, useAuth as useClerkAuth } from '@clerk/clerk-react'
 import { createBooking, getAvailableSlots, generateTimeSlots, convertTo12Hour, blockTimeSlot, removeAvailableSlot } from '@/services/bookings'
-import { SERVICES, URGENT_FEE, Service } from '@/types'
+import { SERVICES, URGENT_FEE, Service, BARBERS } from '@/types'
 import toast from 'react-hot-toast'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -18,6 +18,7 @@ const bookingSchema = z.object({
   booking_type: z.enum(['salon', 'home']),
   time: z.string().min(1, 'اختر وقتاً'),
   notes: z.string().optional(),
+  barber_name: z.string().min(1, 'اختر حلاقاً'),
 })
 
 type BookingFormData = z.infer<typeof bookingSchema>
@@ -55,6 +56,7 @@ const BookingPage: React.FC = () => {
   const selectedService = watch('service_name')
   const selectedTime = watch('time')
   const bookingType = watch('booking_type')
+  const selectedBarber = watch('barber_name')
 
   const serviceData = SERVICES.find(s => s.name === selectedService)
   const today = startOfDay(new Date())
@@ -164,6 +166,7 @@ const BookingPage: React.FC = () => {
         if (parsed.booking_type) setValue('booking_type', parsed.booking_type)
         if (parsed.time) setValue('time', parsed.time)
         if (parsed.notes) setValue('notes', parsed.notes)
+        if (parsed.barber_name) setValue('barber_name', parsed.barber_name)
         if (parsed.date) setSelectedDate(new Date(parsed.date))
         if (parsed.isUrgent) setIsUrgent(parsed.isUrgent)
 
@@ -182,6 +185,7 @@ const BookingPage: React.FC = () => {
         booking_type: data.booking_type,
         time: data.time,
         notes: data.notes || '',
+        barber_name: data.barber_name,
         date: format(selectedDate, 'yyyy-MM-dd'),
         isUrgent: isUrgent && urgentApplies,
       }
@@ -265,6 +269,7 @@ const BookingPage: React.FC = () => {
         time: data.time,
         is_urgent: isUrgent && urgentApplies,
         notes: data.notes,
+        barber_name: data.barber_name,
       }
 
       console.log("📤 Booking Insert Payload:", bookingPayload)
@@ -398,6 +403,10 @@ const BookingPage: React.FC = () => {
               <div className="flex justify-between">
                 <span className="text-gray-400">الخدمة:</span>
                 <span className="text-white font-bold">{selectedService}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">الحلاق المفضل:</span>
+                <span className="text-white font-bold">{selectedBarber}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">التاريخ الميلادي:</span>
@@ -640,6 +649,49 @@ const BookingPage: React.FC = () => {
                 </div>
                 {errors.service_name && <p className="text-red-400 text-sm mt-2">{errors.service_name.message}</p>}
               </motion.div>
+
+              {/* اختيار الحلاق */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35 }}
+                className="card p-6"
+              >
+                <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full gold-gradient text-black text-xs font-black flex items-center justify-center">4</span>
+                  اختر الحلاق
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {BARBERS.map(barber => {
+                    const isSelected = selectedBarber === barber
+                    return (
+                      <button
+                        key={barber}
+                        type="button"
+                        onClick={() => setValue('barber_name', barber)}
+                        className={`p-4 rounded-xl text-center transition-all border flex flex-col items-center justify-center gap-3 relative overflow-hidden ${
+                          isSelected
+                            ? 'border-yellow-400/60 bg-yellow-400/10 shadow-lg shadow-yellow-400/5 scale-[1.02]'
+                            : 'border-white/10 hover:border-white/20 bg-white/5 hover:scale-[1.01]'
+                        }`}
+                      >
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                          isSelected ? 'bg-yellow-400 text-black' : 'bg-white/5 text-gray-400'
+                        }`}>
+                          <Scissors className="w-5 h-5" />
+                        </div>
+                        <span className={`font-bold text-sm ${isSelected ? 'text-white' : 'text-gray-300'}`}>
+                          {barber}
+                        </span>
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-yellow-400" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                {errors.barber_name && <p className="text-red-400 text-sm mt-2">{errors.barber_name.message}</p>}
+              </motion.div>
             </div>
 
             {/* العمود الأيسر - الخيارات والملخص */}
@@ -768,6 +820,10 @@ const BookingPage: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-gray-400">الخدمة</span>
                     <span className="text-white font-bold">{selectedService || '-'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">الحلاق</span>
+                    <span className="text-white font-bold">{selectedBarber || '-'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-400">النوع</span>

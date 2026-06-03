@@ -28,6 +28,9 @@ export const bookingSchema = z.object({
     required_error: 'مؤشر الحجز المستعجل مطلوب'
   }),
   notes: z.string().optional().default(''),
+  barber_name: z.string({
+    required_error: 'الرجاء اختيار الحلاق المفضل'
+  }).min(1, 'الرجاء اختيار الحلاق المفضل'),
 })
 
 // ==========================================

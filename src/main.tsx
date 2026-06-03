@@ -92,7 +92,13 @@ const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ClerkProvider publishableKey={clerkPublishableKey}>
+    <ClerkProvider 
+      publishableKey={clerkPublishableKey}
+      signInUrl={import.meta.env.VITE_CLERK_SIGN_IN_URL || '/login'}
+      signUpUrl={import.meta.env.VITE_CLERK_SIGN_UP_URL || '/signup'}
+      signInForceRedirectUrl={import.meta.env.VITE_CLERK_SIGN_IN_FORCE_REDIRECT_URL || '/user-dashboard'}
+      signUpForceRedirectUrl={import.meta.env.VITE_CLERK_SIGN_UP_FORCE_REDIRECT_URL || '/user-dashboard'}
+    >
       <App />
     </ClerkProvider>
   </React.StrictMode>,

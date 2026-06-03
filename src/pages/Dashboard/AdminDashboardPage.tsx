@@ -4,7 +4,7 @@ import { Calendar, Clock, Edit, Trash2, Plus, Menu, X, Briefcase, Users, Image, 
 import { useAuth } from '@/hooks/useAuth'
 import { useAuth as useClerkAuth } from '@clerk/clerk-react'
 import { Link, Navigate } from 'react-router-dom'
-import { Service, SERVICES } from '@/types'
+import { Service, SERVICES, BARBERS } from '@/types'
 import { format } from 'date-fns'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -46,6 +46,7 @@ const CreateBookingForm: React.FC<{ profiles: any[]; services: Service[]; onCrea
   const [bookingType, setBookingType] = useState<'salon' | 'home'>('salon')
   const [isUrgent, setIsUrgent] = useState(false)
   const [notes, setNotes] = useState('')
+  const [barberName, setBarberName] = useState(BARBERS[0])
 
   useEffect(() => {
     getAvailableSlots(date).then((slots) => {
@@ -87,6 +88,15 @@ const CreateBookingForm: React.FC<{ profiles: any[]; services: Service[]; onCrea
           <label className="text-gray-400 text-xs mb-1 block text-right font-medium">التاريخ</label>
           <input className="input-field text-right" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
+      </div>
+
+      <div>
+        <label className="text-gray-400 text-xs mb-1 block text-right font-medium">الحلاق المفضل</label>
+        <select className="input-field text-right" value={barberName} onChange={(e) => setBarberName(e.target.value)}>
+          {BARBERS.map((barber) => (
+            <option key={barber} value={barber}>{barber}</option>
+          ))}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -141,7 +151,8 @@ const CreateBookingForm: React.FC<{ profiles: any[]; services: Service[]; onCrea
               time,
               is_urgent: isUrgent,
               notes,
-              selected_services: [service]
+              selected_services: [service],
+              barber_name: barberName
             })
           }}
           className="btn-gold flex-1 font-bold py-2.5 text-sm"
@@ -159,6 +170,7 @@ const EditBookingForm: React.FC<{ booking: any; onSave: (u: any) => void; onCanc
   const [date, setDate] = useState(booking.date?.slice(0, 10) || new Date().toISOString().slice(0, 10))
   const [slots, setSlots] = useState<string[]>([])
   const [time, setTime] = useState(booking.time || '12:00')
+  const [barberName, setBarberName] = useState(booking.barber_name || BARBERS[0])
 
   useEffect(() => {
     getAvailableSlots(date).then((s) => {
@@ -179,8 +191,16 @@ const EditBookingForm: React.FC<{ booking: any; onSave: (u: any) => void; onCanc
           {slots.map(s => <option key={s} value={s}>{convertTo12Hour(s)}</option>)}
         </select>
       </div>
+      <div>
+        <label className="text-gray-400 text-xs mb-1 block text-right font-medium">الحلاق</label>
+        <select className="input-field text-right" value={barberName} onChange={(e) => setBarberName(e.target.value)}>
+          {BARBERS.map((barber) => (
+            <option key={barber} value={barber}>{barber}</option>
+          ))}
+        </select>
+      </div>
       <div className="flex gap-3 pt-2">
-        <button onClick={() => onSave({ date, time })} className="btn-gold flex-1 font-bold py-2.5 text-sm">حفظ التغييرات</button>
+        <button onClick={() => onSave({ date, time, barber_name: barberName })} className="btn-gold flex-1 font-bold py-2.5 text-sm">حفظ التغييرات</button>
         <button onClick={onCancel} className="btn-outline-gold px-5 text-sm font-bold">إلغاء</button>
       </div>
     </div>
@@ -600,6 +620,10 @@ const AdminDashboardPage: React.FC = () => {
                                   <span className="text-white font-medium">{appt.booking_type === 'salon' ? 'في الصالون' : 'منزلي'}</span>
                                 </div>
                                 <div>
+                                  <span className="text-gray-500">الحلاق: </span>
+                                  <span className="text-white font-medium">{appt.barber_name || 'غير محدد'}</span>
+                                </div>
+                                <div>
                                   <span className="text-gray-500">التاريخ: </span>
                                   <span className="text-white font-medium">{formattedDate}</span>
                                 </div>
@@ -611,7 +635,7 @@ const AdminDashboardPage: React.FC = () => {
                                   <span className="text-gray-500">السعر: </span>
                                   <span className="text-yellow-400 font-bold">{appt.total_price || 0} د.أ</span>
                                 </div>
-                                <div>
+                                <div className="col-span-2">
                                   <span className="text-gray-500">النقاط: </span>
                                   <span className="text-yellow-400 font-bold">⭐ {points} نقطة</span>
                                 </div>
@@ -690,6 +714,7 @@ const AdminDashboardPage: React.FC = () => {
                               <th className="py-3 px-4">الزبون</th>
                               <th className="py-3 px-4">رقم الهاتف</th>
                               <th className="py-3 px-4">الخدمات المطلوبة</th>
+                              <th className="py-3 px-4">الحلاق</th>
                               <th className="py-3 px-4">التاريخ والوقت</th>
                               <th className="py-3 px-4">المكان</th>
                               <th className="py-3 px-4">السعر الكلي</th>
@@ -726,6 +751,9 @@ const AdminDashboardPage: React.FC = () => {
                                   </td>
                                   <td className="py-4 px-4 text-gray-300 font-medium">
                                     {appt.service_name}
+                                  </td>
+                                  <td className="py-4 px-4 text-gray-300 font-medium">
+                                    {appt.barber_name || <span className="text-gray-500">غير محدد</span>}
                                   </td>
                                   <td className="py-4 px-4 text-gray-300">
                                     <div className="font-medium text-white">{appt.date}</div>

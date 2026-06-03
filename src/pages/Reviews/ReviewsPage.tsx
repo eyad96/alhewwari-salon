@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Star, MessageCircle, User as UserIcon, Plus, Edit2 } from 'lucide-react'
+import { Star, MessageCircle, User as UserIcon, Plus, Edit2, Trash2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -9,14 +9,14 @@ import StarRating from '@/components/shared/StarRating'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getReviews, getUserReview, upsertReview } from '@/services/reviews'
+import { getReviews, getUserReview, upsertReview, deleteReview } from '@/services/reviews'
 
 const reviewSchema = z.object({
   comment: z.string().min(10, 'الرجاء كتابة تعليق لا يقل عن 10 أحرف'),
 })
 
 const ReviewsPage: React.FC = () => {
-  const { user, getAuthenticatedClient } = useAuth()
+  const { user, isAdmin, getAuthenticatedClient } = useAuth()
   const queryClient = useQueryClient()
   const [myRating, setMyRating] = useState(5)
   const [showForm, setShowForm] = useState(false)
@@ -65,6 +65,30 @@ const ReviewsPage: React.FC = () => {
       toast.error('❌ حدث خطأ أثناء حفظ التقييم: ' + err.message)
     }
   })
+
+  // طفرة حذف التقييم (خاص بالمسؤول)
+  const deleteMutation = useMutation({
+    mutationFn: async (reviewId: string) => {
+      const authSupabase = await getAuthenticatedClient()
+      return deleteReview(reviewId, authSupabase)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reviews'] })
+      queryClient.invalidateQueries({ queryKey: ['user-review', user?.id] })
+      toast.success('✅ تم حذف التقييم بنجاح.')
+    },
+    onError: (err: any) => {
+      toast.error('❌ حدث خطأ أثناء حذف التقييم: ' + err.message)
+    }
+  })
+
+  const handleDelete = (review: any) => {
+    const isOwn = user && review.user_id === user.id
+    const msg = isOwn ? 'هل أنت متأكد من حذف تقييمك؟' : 'هل أنت متأكد من حذف هذا التقييم؟'
+    if (window.confirm(msg)) {
+      deleteMutation.mutate(review.id)
+    }
+  }
 
   const onSubmit = async (data: any) => {
     if (!user) return
@@ -247,7 +271,19 @@ const ReviewsPage: React.FC = () => {
                         <p className="text-gray-500 text-xs">{formattedDate}</p>
                       </div>
                     </div>
-                    <StarRating rating={review.rating} size="sm" />
+                    <div className="flex items-center gap-2">
+                      <StarRating rating={review.rating} size="sm" />
+                      {(isAdmin || (user && review.user_id === user.id)) && (
+                        <button
+                          onClick={() => handleDelete(review)}
+                          disabled={deleteMutation.isPending}
+                          className="text-red-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                          title="حذف التقييم"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="text-gray-300 leading-relaxed">{review.comment}</p>
                 </motion.div>

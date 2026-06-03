@@ -210,9 +210,13 @@ export interface CreateBookingData {
   is_urgent: boolean
   notes?: string
   selected_services?: any[]
+  barber_name?: string
 }
 
 export const createBooking = async (data: CreateBookingData, supabase = defaultSupabase): Promise<Booking> => {
+  const normalizedTime = convertTo24Hour(data.time)
+  const barberFallback = data.barber_name?.trim() || 'عبدالله الحواري'
+
   const urgent_fee = data.is_urgent ? 5 : 0
   const total_price = data.service_price + urgent_fee
 
@@ -228,9 +232,10 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
     service_price: data.service_price,
     booking_type: data.booking_type,
     date: data.date,
-    time: data.time,
+    time: normalizedTime,
     is_urgent: data.is_urgent,
     notes: data.notes || '',
+    barber_name: barberFallback,
   })
 
   // Check if this date and time is already booked by an active (pending or confirmed) booking
@@ -238,7 +243,7 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
     .from('bookings')
     .select('id')
     .eq('date', data.date)
-    .eq('time', data.time)
+    .eq('time', normalizedTime)
     .in('status', ['pending', 'confirmed'])
     .maybeSingle()
 
@@ -272,13 +277,14 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
     service_price: data.service_price,
     booking_type: data.booking_type,
     date: data.date,
-    time: data.time,
+    time: normalizedTime,
     is_urgent: data.is_urgent,
     status: 'pending',
     total_price,
     notes: data.notes || '',
     modified_count: 0,
-    selected_services: data.selected_services || []
+    selected_services: data.selected_services || [],
+    barber_name: barberFallback
   }
 
   console.log("📤 [Supabase Insert] Payload being sent to public.bookings:", insertPayload)
@@ -308,7 +314,7 @@ export const createBooking = async (data: CreateBookingData, supabase = defaultS
         .from('available_slots')
         .delete()
         .eq('date', data.date)
-        .eq('time', data.time)
+        .eq('time', normalizedTime)
 
       if (deleteSlotError) {
         console.warn("⚠️ Failed to delete slot from available_slots:", deleteSlotError.message)
@@ -358,11 +364,17 @@ export const updateBookingStatus = async (
 
 export const modifyBooking = async (
   bookingId: string,
-  updates: { date?: string; time?: string },
+  updates: { date?: string; time?: string; barber_name?: string },
   supabase = defaultSupabase,
 ): Promise<Booking> => {
+  const normalizedTime = updates.time ? convertTo24Hour(updates.time) : undefined
+  const cleanUpdates = {
+    ...updates,
+    ...(normalizedTime ? { time: normalizedTime } : {})
+  }
+
   // Enforce Zod validation at the service level boundary
-  bookingSchema.partial().parse(updates)
+  bookingSchema.partial().parse(cleanUpdates)
 
   // تحقق من عدد التعديلات والبيانات الحالية
   const { data: existing, error: existingError } = await supabase
@@ -380,10 +392,10 @@ export const modifyBooking = async (
   }
 
   // التحقق من توافر الوقت الجديد إذا تم تعديل التاريخ أو الوقت
-  const targetDate = updates.date || existing.date
-  const targetTime = updates.time || existing.time
+  const targetDate = cleanUpdates.date || existing.date
+  const targetTime = cleanUpdates.time || existing.time
 
-  if (updates.date || updates.time) {
+  if (cleanUpdates.date || cleanUpdates.time) {
     const { data: duplicateBooking, error: dupError } = await supabase
       .from('bookings')
       .select('id')
@@ -406,7 +418,7 @@ export const modifyBooking = async (
     const { data, error } = await supabase
       .from('bookings')
       .update({
-        ...updates,
+        ...cleanUpdates,
         modified_count: (existing.modified_count ?? 0) + 1,
       })
       .eq('id', bookingId)
@@ -416,7 +428,7 @@ export const modifyBooking = async (
     if (error) throw error
 
     // If date or time was updated, delete the newly selected slot from available_slots table
-    if (updates.date || updates.time) {
+    if (cleanUpdates.date || cleanUpdates.time) {
       try {
         const { error: deleteSlotError } = await supabase
           .from('available_slots')

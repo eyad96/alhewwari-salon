@@ -185,9 +185,8 @@ ALTER TABLE public.photo_likes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_likes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.available_slots ENABLE ROW LEVEL SECURITY;
 
--- أ. سياسات جدول الملفات الشخصية (profiles)
-CREATE POLICY "Users can view own profile" ON public.profiles
-  FOR SELECT USING (id = COALESCE(auth.jwt() ->> 'sub', auth.uid()::text));
+CREATE POLICY "Anyone can view profiles" ON public.profiles
+  FOR SELECT USING (true);
 
 CREATE POLICY "Users can update own profile" ON public.profiles
   FOR UPDATE USING (id = COALESCE(auth.jwt() ->> 'sub', auth.uid()::text));

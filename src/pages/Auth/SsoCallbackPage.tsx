@@ -17,8 +17,8 @@ const SsoCallbackPage: React.FC = () => {
 
       {/* Clerk pre-built handler that parses the URL token and logs the user in */}
       <AuthenticateWithRedirectCallback 
-        signUpForceRedirectUrl="/dashboard"
-        signInForceRedirectUrl="/dashboard"
+        signUpForceRedirectUrl={import.meta.env.VITE_CLERK_AFTER_SIGN_UP_URL || '/dashboard'}
+        signInForceRedirectUrl={import.meta.env.VITE_CLERK_AFTER_SIGN_IN_URL || '/dashboard'}
       />
     </div>
   )
